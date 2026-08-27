@@ -35,17 +35,22 @@ Named after Plato's *Meno* — the dialogue built around the paradox of how you 
 ```bash
 npm install
 cp .env.local.example .env.local
-# fill in .env.local with your Firebase web config and GCP project id
+# set GCP_PROJECT_ID to your project; keep GCP_LOCATION=global
+# (gemini-3.5 models are served from the global Vertex endpoint)
 gcloud auth application-default login   # local Vertex AI + Firestore admin credentials
+gcloud services enable aiplatform.googleapis.com firestore.googleapis.com
 ```
 
 ### Run locally
 
+Two modes:
+
 ```bash
-npm run dev
+npm run dev       # real Gemini + your project's real Firestore
+npm run dev:emu   # real Gemini + local Firestore emulator (data persists in .emulator-data/)
 ```
 
-Open http://localhost:3000.
+Open http://localhost:3000. `dev:emu` is the safe dogfooding mode: Sessions live only on your machine and survive restarts, without touching production data.
 
 ### Run the tests
 

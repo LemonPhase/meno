@@ -1,5 +1,5 @@
 import { genkit, type ModelArgument } from "genkit";
-import { vertexAI } from "@genkit-ai/vertexai";
+import { vertexAI } from "@genkit-ai/google-genai";
 import { registerScriptedModel } from "./scripted";
 
 // MENO_MODEL selects the model for every flow. "scripted" swaps in the
@@ -13,7 +13,8 @@ export const ai = genkit({
     : [
         vertexAI({
           projectId: process.env.GCP_PROJECT_ID,
-          location: process.env.GCP_LOCATION ?? "us-central1",
+          // gemini-3.5 models are served from the "global" endpoint.
+          location: process.env.GCP_LOCATION ?? "global",
         }),
       ],
 });

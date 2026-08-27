@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:emu": "bash scripts/dev-emu.sh",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -11,8 +12,8 @@
     "test:watch": "bash scripts/test.sh watch"
   },
   "dependencies": {
+    "@genkit-ai/google-genai": "^1.41.0",
     "@genkit-ai/next": "^1.41.0",
-    "@genkit-ai/vertexai": "^1.41.0",
     "firebase": "^12.18.0",
     "firebase-admin": "^14.3.0",
     "genkit": "^1.41.0",

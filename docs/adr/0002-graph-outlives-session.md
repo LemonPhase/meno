@@ -1,0 +1,3 @@
+# The Graph is a durable per-user container, not a per-Session artifact
+
+Concepts belong to one long-lived Graph per user; a Session only records which Concepts it originated. The MVP runs a single Session, so it would have been simpler to make "the graph" mean "this Session's Concepts" — we chose not to, because the product vision is a personal knowledge tree that accumulates across many Sessions, and retrofitting a durable container under Session-scoped data later would mean a data migration. The cost now is one extra level of indirection (`graphId` on Concepts). Cross-session concept deduplication is explicitly *not* built: a second Session may create Concepts that overlap with existing ones, and merging them is future work.

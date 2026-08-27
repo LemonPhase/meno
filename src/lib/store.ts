@@ -290,6 +290,72 @@ export function nextLockedConcept(concepts: Concept[]): Concept | null {
   );
 }
 
+/**
+ * Adjustment `insert_remedial` (ADR-0001): splice a remedial Concept into
+ * the Path immediately after the Active one, ahead of everything that was
+ * next. The previously-next Concept gains a `requires` edge on it.
+ */
+export async function spliceRemedialConcept(
+  session: Session,
+  active: Concept,
+  concepts: Concept[],
+  remedial: { label: string; summary: string },
+  graphId: string = DEMO_USER_ID,
+): Promise<Concept> {
+  const graph = graphRef(graphId);
+  const remedialCount = concepts.filter((c) => c.origin === "remedial").length;
+  const activeOrder = active.order ?? -1;
+  const maxIndex = Math.max(...concepts.map((c) => c.extractionIndex));
+
+  const concept: Concept = {
+    id: `${session.id.slice(0, 8)}_rem${remedialCount + 1}`,
+    label: remedial.label,
+    summary: remedial.summary,
+    status: "locked",
+    skipped: false,
+    origin: "remedial",
+    requires: [],
+    sessionId: session.id,
+    order: activeOrder + 1,
+    extractionIndex: maxIndex + 1,
+    createdAt: Date.now(),
+  };
+
+  const batch = db.batch();
+  batch.set(graph.collection("concepts").doc(concept.id), concept);
+  const wasNext = nextLockedConcept(concepts);
+  for (const c of concepts) {
+    if (c.order !== null && c.order > activeOrder) {
+      batch.update(graph.collection("concepts").doc(c.id), {
+        order: c.order + 1,
+        ...(wasNext && c.id === wasNext.id
+          ? { requires: [...c.requires, concept.id] }
+          : {}),
+      });
+    }
+  }
+  await batch.commit();
+  return concept;
+}
+
+/**
+ * Adjustment `skip_next` (ADR-0001): the next Concept on the Path is
+ * Unlocked + Skipped without being taught. Returns it, or null when there
+ * was nothing to skip.
+ */
+export async function skipNextConcept(
+  concepts: Concept[],
+  graphId: string = DEMO_USER_ID,
+): Promise<Concept | null> {
+  const next = nextLockedConcept(concepts);
+  if (!next) return null;
+  await graphRef(graphId)
+    .collection("concepts")
+    .doc(next.id)
+    .update({ status: "unlocked", skipped: true });
+  return next;
+}
+
 export async function completeSession(
   session: Session,
   recap: string,

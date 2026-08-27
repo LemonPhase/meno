@@ -4,7 +4,10 @@ import {
   appendLessonMessages,
   getCurrentState,
   lessonMessage,
+  nextLockedConcept,
   recordCheckResult,
+  skipNextConcept,
+  spliceRemedialConcept,
   unlockConcept,
 } from "@/lib/store";
 
@@ -51,9 +54,11 @@ export async function POST(request: Request) {
     (l) => l.conceptId === session.activeConceptId,
   )!;
 
+  const next = nextLockedConcept(state.concepts);
   const grade = await gradeMasteryCheck({
     topic: session.topic,
     concept: { label: concept.label, summary: concept.summary },
+    nextConcept: next ? { label: next.label, summary: next.summary } : null,
     lesson: { messages: lesson.messages },
     question: check.question,
     answer: answer.trim(),
@@ -64,6 +69,18 @@ export async function POST(request: Request) {
     lessonMessage("check-answer", answer.trim(), check.id),
     lessonMessage("check-feedback", grade.feedback, check.id),
   ]);
+
+  // ADR-0001: the bounded Adjustment rides on the grading result.
+  if (grade.adjustment === "insert_remedial" && grade.remedial) {
+    await spliceRemedialConcept(
+      session,
+      concept,
+      state.concepts,
+      grade.remedial,
+    );
+  } else if (grade.adjustment === "skip_next") {
+    await skipNextConcept(state.concepts);
+  }
 
   if (grade.verdict === "pass") {
     await unlockConcept(concept.id);

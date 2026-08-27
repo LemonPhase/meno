@@ -113,11 +113,28 @@ answerable in a sentence or two of free text.`,
   },
 );
 
+// ADR-0001: the Adjustment is bounded to exactly two actions riding on the
+// grading call — never a replan of the remaining Path.
 export const GradeSchema = z.object({
   verdict: z.enum(["pass", "fail"]),
   feedback: z
     .string()
     .describe("brief feedback: what was right, what was missing"),
+  adjustment: z
+    .enum(["none", "insert_remedial", "skip_next"])
+    .default("none")
+    .describe(
+      "insert_remedial: the answer reveals a real gap that needs its own " +
+        "small lesson spliced in next. skip_next: the answer clearly " +
+        "demonstrates the NEXT concept too. Otherwise none.",
+    ),
+  remedial: z
+    .object({
+      label: z.string(),
+      summary: z.string().describe("one sentence: what this fills in"),
+    })
+    .optional()
+    .describe("required when adjustment is insert_remedial"),
 });
 
 export const gradeMasteryCheck = ai.defineFlow(
@@ -126,6 +143,10 @@ export const gradeMasteryCheck = ai.defineFlow(
     inputSchema: z.object({
       topic: z.string(),
       concept: z.object({ label: z.string(), summary: z.string() }),
+      nextConcept: z
+        .object({ label: z.string(), summary: z.string() })
+        .nullable()
+        .describe("the next concept on the path, if any"),
       lesson: z.object({
         messages: z.array(
           z.object({ kind: z.string(), text: z.string() }),
@@ -136,11 +157,16 @@ export const gradeMasteryCheck = ai.defineFlow(
     }),
     outputSchema: GradeSchema,
   },
-  async ({ topic, concept, lesson, question, answer }) => {
+  async ({ topic, concept, nextConcept, lesson, question, answer }) => {
     const res = await ai.generate({
       model,
       prompt: `You are a tutor grading a mastery check. The learner's goal: ${topic}.
 ${conceptIntro(concept)}
+Next on their path: ${
+        nextConcept
+          ? `${nextConcept.label} — ${nextConcept.summary}`
+          : "(nothing — this is the last concept)"
+      }
 
 The lesson so far:
 ${transcript(lesson as Lesson)}
@@ -150,11 +176,21 @@ Learner's answer: ${answer}
 
 Grade it: "pass" only if the answer demonstrates real understanding of the
 concept. Give brief, encouraging feedback either way — if it's a fail, say
-what was missing without giving the full answer away.`,
+what was missing without giving the full answer away.
+
+You may also adjust the path (adjustment field):
+- "insert_remedial" with a remedial {label, summary} when the answer reveals
+  a specific underlying gap worth its own small lesson before continuing.
+- "skip_next" when the answer ALSO clearly demonstrates understanding of the
+  next concept on the path.
+- otherwise "none". Use these sparingly — only on strong evidence.`,
       output: { schema: GradeSchema },
     });
     const out = res.output;
     if (!out) throw new Error("mastery check: grading returned no output");
+    if (out.adjustment === "insert_remedial" && !out.remedial) {
+      return { ...out, adjustment: "none" as const };
+    }
     return out;
   },
 );

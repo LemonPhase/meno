@@ -2,7 +2,9 @@ import { gradeMasteryCheck } from "@/ai/lesson";
 import { advanceToNextConcept } from "@/lib/progression";
 import {
   appendLessonMessages,
+  formatEditContext,
   getCurrentState,
+  getRecentEdits,
   lessonMessage,
   nextLockedConcept,
   recordCheckResult,
@@ -62,6 +64,7 @@ export async function POST(request: Request) {
     lesson: { messages: lesson.messages },
     question: check.question,
     answer: answer.trim(),
+    editContext: formatEditContext(await getRecentEdits()),
   });
 
   await recordCheckResult(check.id, answer.trim(), grade.verdict);

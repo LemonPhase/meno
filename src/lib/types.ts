@@ -30,6 +30,21 @@ export interface Concept {
   createdAt: number;
 }
 
+/**
+ * A recorded, user-made change to a Concept — append-only, and surfaced
+ * to the agent as context for future Graph updates.
+ */
+export interface Edit {
+  id: string;
+  conceptId: string;
+  kind: "rename" | "delete";
+  /** The Concept's label before the Edit. */
+  before: string;
+  /** The new label for renames; null for deletes. */
+  after: string | null;
+  createdAt: number;
+}
+
 export type CheckPhase = "diagnostic" | "mastery";
 
 export interface Check {

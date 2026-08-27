@@ -2,7 +2,9 @@ import { investigateTopic } from "@/ai/investigate";
 import { generateDiagnostic } from "@/ai/diagnose";
 import {
   createSession,
+  formatEditContext,
   getCurrentState,
+  getRecentEdits,
   saveDiagnosticChecks,
   saveInvestigation,
 } from "@/lib/store";
@@ -23,7 +25,10 @@ export async function POST(request: Request) {
   }
 
   const session = await createSession(topic.trim());
-  const investigation = await investigateTopic({ topic: topic.trim() });
+  const investigation = await investigateTopic({
+    topic: topic.trim(),
+    editContext: formatEditContext(await getRecentEdits()),
+  });
   const { session: updated, concepts } = await saveInvestigation(
     session,
     investigation,

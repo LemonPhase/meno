@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { db } from "./firebase-admin";
 import { DEMO_USER_ID } from "./constants";
-import type { Check, Concept, Lesson, LessonMessage, Session } from "./types";
+import type {
+  Check,
+  Concept,
+  Edit,
+  Lesson,
+  LessonMessage,
+  Session,
+} from "./types";
 import type { Investigation } from "@/ai/investigate";
 
 // Firestore layout (ADR-0002: the Graph is the durable per-user container):
@@ -377,6 +384,110 @@ export async function getLessons(
     .where("sessionId", "==", sessionId)
     .get();
   return snap.docs.map((d) => d.data() as Lesson);
+}
+
+/**
+ * Rename a Concept (any status) and record the Edit append-only
+ * (ADR-0003 philosophy: the user curating their own Graph is trusted).
+ */
+export async function renameConcept(
+  concept: Concept,
+  label: string,
+  graphId: string = DEMO_USER_ID,
+): Promise<void> {
+  const graph = graphRef(graphId);
+  const edit: Edit = {
+    id: randomUUID(),
+    conceptId: concept.id,
+    kind: "rename",
+    before: concept.label,
+    after: label,
+    createdAt: Date.now(),
+  };
+  const batch = db.batch();
+  batch.update(graph.collection("concepts").doc(concept.id), { label });
+  batch.set(graph.collection("edits").doc(edit.id), edit);
+  await batch.commit();
+}
+
+/**
+ * Delete a Concept (ADR-0003: never blocks, never cascades). Dependents
+ * lose the entry from `requires`; a Path gap closes by shifting later
+ * orders down; the Lesson goes with it; the Edit is recorded append-only.
+ * Returns whether the deleted Concept was the Active one (the caller must
+ * then advance the Session).
+ */
+export async function deleteConcept(
+  session: Session,
+  concept: Concept,
+  graphId: string = DEMO_USER_ID,
+): Promise<{ wasActive: boolean }> {
+  const graph = graphRef(graphId);
+  const all = await graph.collection("concepts").get();
+  const edit: Edit = {
+    id: randomUUID(),
+    conceptId: concept.id,
+    kind: "delete",
+    before: concept.label,
+    after: null,
+    createdAt: Date.now(),
+  };
+
+  const batch = db.batch();
+  batch.delete(graph.collection("concepts").doc(concept.id));
+  batch.delete(graph.collection("lessons").doc(concept.id));
+  for (const doc of all.docs) {
+    const other = doc.data() as Concept;
+    if (other.id === concept.id) continue;
+    const updates: Partial<Concept> = {};
+    if (other.requires.includes(concept.id)) {
+      updates.requires = other.requires.filter((r) => r !== concept.id);
+    }
+    if (
+      concept.order !== null &&
+      other.order !== null &&
+      other.order > concept.order
+    ) {
+      updates.order = other.order - 1;
+    }
+    if (Object.keys(updates).length > 0) {
+      batch.update(graph.collection("concepts").doc(other.id), updates);
+    }
+  }
+  const wasActive = session.activeConceptId === concept.id;
+  if (wasActive) {
+    batch.update(graph.collection("sessions").doc(session.id), {
+      activeConceptId: null,
+    });
+  }
+  batch.set(graph.collection("edits").doc(edit.id), edit);
+  await batch.commit();
+  return { wasActive };
+}
+
+/** Recent Edits, newest first — the context future agent calls receive. */
+export async function getRecentEdits(
+  graphId: string = DEMO_USER_ID,
+  limit = 20,
+): Promise<Edit[]> {
+  const snap = await graphRef(graphId)
+    .collection("edits")
+    .orderBy("createdAt", "desc")
+    .limit(limit)
+    .get();
+  return snap.docs.map((d) => d.data() as Edit);
+}
+
+/** Render recent Edits as plain prompt context (empty string when none). */
+export function formatEditContext(edits: Edit[]): string {
+  if (edits.length === 0) return "";
+  const lines = edits.map((e) =>
+    e.kind === "rename"
+      ? `- renamed "${e.before}" to "${e.after}"`
+      : `- deleted "${e.before}"`,
+  );
+  return `The learner has curated their knowledge graph — respect how they organize their own understanding:
+${lines.join("\n")}`;
 }
 
 /** The latest Session, its Concepts and Checks — what the UI rehydrates from. */

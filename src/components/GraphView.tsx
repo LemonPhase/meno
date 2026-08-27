@@ -143,9 +143,15 @@ const TRANSITION: CSSProperties = {
 export default function GraphView({
   concepts,
   lessons,
+  onRename,
+  onDelete,
 }: {
   concepts: Concept[];
   lessons: Lesson[];
+  /** When provided, the Concept panel offers renaming (recorded as an Edit). */
+  onRename?: (conceptId: string, label: string) => Promise<void> | void;
+  /** When provided, the Concept panel offers deletion (ADR-0003 semantics). */
+  onDelete?: (conceptId: string) => Promise<void> | void;
 }) {
   const [reviewedConceptId, setReviewedConceptId] = useState<string | null>(
     null,
@@ -230,21 +236,20 @@ export default function GraphView({
         {[...placements.values()].map((placement) => {
           const { concept, label, width } = placement;
           const hasLesson = lessons.some((l) => l.conceptId === concept.id);
+          const clickable = hasLesson || !!onRename || !!onDelete;
           return (
             <g
               key={concept.id}
               style={{
                 ...TRANSITION,
                 transform: `translate(${placement.x}px, ${placement.y}px)`,
-                cursor: hasLesson ? "pointer" : "default",
+                cursor: clickable ? "pointer" : "default",
               }}
               onClick={
-                hasLesson ? () => setReviewedConceptId(concept.id) : undefined
+                clickable ? () => setReviewedConceptId(concept.id) : undefined
               }
-              role={hasLesson ? "button" : undefined}
-              aria-label={
-                hasLesson ? `Review the Lesson for ${concept.label}` : undefined
-              }
+              role={clickable ? "button" : undefined}
+              aria-label={clickable ? `Open ${concept.label}` : undefined}
             >
               <title>
                 {concept.label}
@@ -295,10 +300,15 @@ export default function GraphView({
 
       <GraphLegend />
 
-      {reviewedConcept && reviewedLesson && (
-        <LessonReview
+      {reviewedConcept && (
+        <ConceptPanel
           concept={reviewedConcept}
           lesson={reviewedLesson}
+          dependents={concepts.filter((c) =>
+            c.requires.includes(reviewedConcept.id),
+          )}
+          onRename={onRename}
+          onDelete={onDelete}
           onClose={() => setReviewedConceptId(null)}
         />
       )}
@@ -355,15 +365,24 @@ function messageBubbleClass(kind: LessonMessage["kind"]): string {
   return "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100";
 }
 
-function LessonReview({
+function ConceptPanel({
   concept,
   lesson,
+  dependents,
+  onRename,
+  onDelete,
   onClose,
 }: {
   concept: Concept;
-  lesson: Lesson;
+  lesson: Lesson | null;
+  dependents: Concept[];
+  onRename?: (conceptId: string, label: string) => Promise<void> | void;
+  onDelete?: (conceptId: string) => Promise<void> | void;
   onClose: () => void;
 }) {
+  const [label, setLabel] = useState(concept.label);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -378,19 +397,41 @@ function LessonReview({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label={`Lesson for ${concept.label}`}
+      aria-label={concept.label}
     >
       <div
         className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-lg border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4 border-b border-zinc-200 p-4 dark:border-zinc-800">
-          <div>
-            <h3 className="font-medium text-zinc-900 dark:text-zinc-100">
-              {concept.label}
-            </h3>
+          <div className="min-w-0 flex-1">
+            {onRename ? (
+              <div className="flex gap-2">
+                <input
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                  aria-label="Concept label"
+                  className="w-full rounded border border-transparent bg-transparent font-medium text-zinc-900 hover:border-zinc-300 focus:border-zinc-500 focus:outline-none dark:text-zinc-100 dark:hover:border-zinc-700"
+                />
+                {label.trim() !== concept.label && label.trim() !== "" && (
+                  <button
+                    onClick={async () => {
+                      await onRename(concept.id, label.trim());
+                      onClose();
+                    }}
+                    className="shrink-0 rounded bg-zinc-900 px-3 py-1 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+                  >
+                    Rename
+                  </button>
+                )}
+              </div>
+            ) : (
+              <h3 className="font-medium text-zinc-900 dark:text-zinc-100">
+                {concept.label}
+              </h3>
+            )}
             <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-              Lesson review
+              <span className="capitalize">{concept.status}</span>
               {concept.skipped
                 ? " · you already knew this"
                 : concept.origin === "remedial"
@@ -400,19 +441,25 @@ function LessonReview({
           </div>
           <button
             onClick={onClose}
-            aria-label="Close Lesson review"
+            aria-label="Close"
             className="rounded px-2 py-1 text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
           >
             Close
           </button>
         </div>
+
         <div className="flex flex-col gap-3 overflow-y-auto p-4">
-          {lesson.messages.length === 0 && (
+          {!lesson && (
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              {concept.summary}
+            </p>
+          )}
+          {lesson?.messages.length === 0 && (
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
               Nothing recorded in this Lesson yet.
             </p>
           )}
-          {lesson.messages.map((m, i) => (
+          {lesson?.messages.map((m, i) => (
             <div
               key={i}
               className={`whitespace-pre-wrap rounded-lg p-3 text-sm ${messageBubbleClass(m.kind)}`}
@@ -426,6 +473,47 @@ function LessonReview({
             </div>
           ))}
         </div>
+
+        {onDelete && (
+          <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
+            {confirmingDelete ? (
+              <div className="flex flex-col gap-2">
+                {dependents.length > 0 && (
+                  <p className="text-sm text-amber-700 dark:text-amber-400">
+                    {dependents.map((d) => d.label).join(", ")}{" "}
+                    {dependents.length === 1 ? "lists" : "list"} this as a
+                    prerequisite — deleting won&apos;t remove them, but the
+                    link will be gone.
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      await onDelete(concept.id);
+                      onClose();
+                    }}
+                    className="rounded bg-red-600 px-3 py-1 text-sm font-medium text-white"
+                  >
+                    Delete for real
+                  </button>
+                  <button
+                    onClick={() => setConfirmingDelete(false)}
+                    className="rounded border border-zinc-300 px-3 py-1 text-sm text-zinc-700 dark:border-zinc-700 dark:text-zinc-300"
+                  >
+                    Keep it
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmingDelete(true)}
+                className="text-sm text-red-600 hover:underline"
+              >
+                Delete this Concept…
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

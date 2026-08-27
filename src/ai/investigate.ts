@@ -29,10 +29,16 @@ export type Investigation = z.infer<typeof InvestigationSchema>;
 export const investigateTopic = ai.defineFlow(
   {
     name: "investigateTopic",
-    inputSchema: z.object({ topic: z.string() }),
+    inputSchema: z.object({
+      topic: z.string(),
+      editContext: z
+        .string()
+        .default("")
+        .describe("how the learner has curated their graph so far"),
+    }),
     outputSchema: InvestigationSchema,
   },
-  async ({ topic }) => {
+  async ({ topic, editContext }) => {
     const research = await ai.generate({
       model,
       prompt: `You are a tutor preparing to teach someone a topic they gave you.
@@ -53,7 +59,7 @@ kebab-case key, a short label, a one-or-two-sentence summary, and the keys of
 the concepts it requires (prerequisites only — direct dependencies, not the
 whole transitive chain). Aim for 4-10 atomic concepts. Include the target
 topic itself as the final concept.
-
+${editContext ? `\n${editContext}\n` : ""}
 Research notes:
 ${research.text}`,
       output: { schema: InvestigationSchema },

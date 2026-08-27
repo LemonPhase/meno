@@ -154,10 +154,22 @@ export const gradeMasteryCheck = ai.defineFlow(
       }),
       question: z.string(),
       answer: z.string(),
+      editContext: z
+        .string()
+        .default("")
+        .describe("how the learner has curated their graph so far"),
     }),
     outputSchema: GradeSchema,
   },
-  async ({ topic, concept, nextConcept, lesson, question, answer }) => {
+  async ({
+    topic,
+    concept,
+    nextConcept,
+    lesson,
+    question,
+    answer,
+    editContext,
+  }) => {
     const res = await ai.generate({
       model,
       prompt: `You are a tutor grading a mastery check. The learner's goal: ${topic}.
@@ -183,7 +195,8 @@ You may also adjust the path (adjustment field):
   a specific underlying gap worth its own small lesson before continuing.
 - "skip_next" when the answer ALSO clearly demonstrates understanding of the
   next concept on the path.
-- otherwise "none". Use these sparingly — only on strong evidence.`,
+- otherwise "none". Use these sparingly — only on strong evidence.
+${editContext ? `\n${editContext}\nNever insert a remedial that recreates something they deleted.` : ""}`,
       output: { schema: GradeSchema },
     });
     const out = res.output;

@@ -53,14 +53,15 @@ export default function Home() {
     label: string,
     url: string,
     body?: unknown,
+    method = "POST",
   ): Promise<void> {
     setBusy(label);
     setError(null);
     try {
       const res = await fetch(url, {
-        method: "POST",
+        method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
       setState(await res.json());
@@ -133,12 +134,23 @@ export default function Home() {
 
           {session.phase === "complete" && <Complete state={state} />}
 
-          {(session.phase === "learning" || session.phase === "complete") && (
+          {(session.phase === "previewing" ||
+            session.phase === "learning" ||
+            session.phase === "complete") && (
             <div className="mt-8">
               <h3 className="mb-2 text-sm font-medium uppercase tracking-wide text-zinc-500">
                 Concept graph
               </h3>
-              <GraphView concepts={state.concepts} lessons={state.lessons} />
+              <GraphView
+                concepts={state.concepts}
+                lessons={state.lessons}
+                onRename={(id, label) =>
+                  call("rename", `/api/concepts/${id}`, { label }, "PATCH")
+                }
+                onDelete={(id) =>
+                  call("delete", `/api/concepts/${id}`, undefined, "DELETE")
+                }
+              />
             </div>
           )}
         </section>

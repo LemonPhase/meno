@@ -37,9 +37,9 @@ export async function POST(request: Request) {
       summary,
     })),
   });
-  const checks = await saveDiagnosticChecks(updated.id, diagnostic.questions);
+  await saveDiagnosticChecks(updated.id, diagnostic.questions);
 
-  return Response.json({ session: updated, concepts, checks });
+  return Response.json(await getCurrentState());
 }
 
 /** Current state: the latest Session, its Concepts and Checks. */

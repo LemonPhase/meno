@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import GraphView from "@/components/GraphView";
 import type { Check, Concept, Lesson, Session } from "@/lib/types";
 
 type State = {
@@ -23,6 +24,30 @@ export default function Home() {
       .then(setState)
       .catch(() => {});
   }, []);
+
+  // While Learning, poll for agent-driven changes (remedial splices, status
+  // flips) so the graph stays live without user action. Paused whenever a
+  // call is busy, and an in-flight poll is discarded if one starts, so
+  // polling never clobbers a user action's fresher state.
+  const phase = state.session?.phase;
+  useEffect(() => {
+    if (phase !== "learning" || busy) return;
+    let cancelled = false;
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch("/api/session");
+        if (!res.ok) return;
+        const next = await res.json();
+        if (!cancelled) setState(next);
+      } catch {
+        // Ignore transient polling failures.
+      }
+    }, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [phase, busy]);
 
   async function call(
     label: string,
@@ -107,6 +132,15 @@ export default function Home() {
           )}
 
           {session.phase === "complete" && <Complete state={state} />}
+
+          {(session.phase === "learning" || session.phase === "complete") && (
+            <div className="mt-8">
+              <h3 className="mb-2 text-sm font-medium uppercase tracking-wide text-zinc-500">
+                Concept graph
+              </h3>
+              <GraphView concepts={state.concepts} lessons={state.lessons} />
+            </div>
+          )}
         </section>
       )}
     </div>

@@ -62,15 +62,31 @@ Tests are black-box: they call the server interface (route handlers) the way the
 
 ### Deploy to Cloud Run
 
+One-time: create the runtime service account and grant it the two roles the app needs.
+
+```bash
+gcloud iam service-accounts create meno-runtime \
+  --display-name="Meno Cloud Run runtime" --project=<your-project-id>
+
+gcloud projects add-iam-policy-binding <your-project-id> \
+  --member="serviceAccount:meno-runtime@<your-project-id>.iam.gserviceaccount.com" \
+  --role="roles/aiplatform.user"
+
+gcloud projects add-iam-policy-binding <your-project-id> \
+  --member="serviceAccount:meno-runtime@<your-project-id>.iam.gserviceaccount.com" \
+  --role="roles/datastore.user"
+```
+
+Then deploy (note `GCP_LOCATION=global` — gemini-3.5 models are only served from the global Vertex endpoint; the Cloud Run region is independent of it):
+
 ```bash
 gcloud run deploy meno \
   --source . \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars GCP_PROJECT_ID=<your-project-id>,GCP_LOCATION=us-central1
+  --service-account meno-runtime@<your-project-id>.iam.gserviceaccount.com \
+  --set-env-vars GCP_PROJECT_ID=<your-project-id>,GCP_LOCATION=global
 ```
-
-The Cloud Run service's attached service account needs the `roles/aiplatform.user` and `roles/datastore.user` IAM roles.
 
 ## Status
 

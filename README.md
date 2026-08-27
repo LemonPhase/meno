@@ -47,6 +47,14 @@ npm run dev
 
 Open http://localhost:3000.
 
+### Run the tests
+
+```bash
+npm test
+```
+
+Tests are black-box: they call the server interface (route handlers) the way the browser would, running against the **Firestore emulator** (needs Java 21+; started automatically) with a **scripted fake model** substituted at the model-injection seam (`MENO_MODEL=scripted`), so no GCP credentials or network are needed.
+
 ### Deploy to Cloud Run
 
 ```bash

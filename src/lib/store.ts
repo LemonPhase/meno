@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { db } from "./firebase-admin";
 import { DEMO_USER_ID } from "./constants";
-import type { Check, Concept, Session } from "./types";
+import type { Check, Concept, Lesson, LessonMessage, Session } from "./types";
 import type { Investigation } from "@/ai/investigate";
 
 // Firestore layout (ADR-0002: the Graph is the durable per-user container):
@@ -21,6 +21,7 @@ export async function createSession(
     topic,
     phase: "investigating",
     activeConceptId: null,
+    recap: null,
     createdAt: Date.now(),
   };
   await graphRef(graphId).collection("sessions").doc(session.id).set(session);
@@ -182,11 +183,142 @@ export async function applyDiagnosis(
   await batch.commit();
 }
 
+const message = (
+  kind: LessonMessage["kind"],
+  text: string,
+  checkId?: string,
+): LessonMessage => ({
+  kind,
+  text,
+  ...(checkId ? { checkId } : {}),
+  createdAt: Date.now(),
+});
+
+export { message as lessonMessage };
+
+/**
+ * Activate a Concept: it becomes the Session's one Active Concept and its
+ * Lesson opens with the exposition. (Lazy generation: the exposition is
+ * produced only now, when the Concept is reached.)
+ */
+export async function activateConcept(
+  session: Session,
+  conceptId: string,
+  exposition: string,
+  graphId: string = DEMO_USER_ID,
+): Promise<void> {
+  const graph = graphRef(graphId);
+  const lesson: Lesson = {
+    conceptId,
+    sessionId: session.id,
+    messages: [message("exposition", exposition)],
+  };
+  const batch = db.batch();
+  batch.update(graph.collection("concepts").doc(conceptId), {
+    status: "active",
+  });
+  batch.set(graph.collection("lessons").doc(conceptId), lesson);
+  batch.update(graph.collection("sessions").doc(session.id), {
+    phase: "learning",
+    activeConceptId: conceptId,
+  });
+  await batch.commit();
+}
+
+export async function appendLessonMessages(
+  conceptId: string,
+  messages: LessonMessage[],
+  graphId: string = DEMO_USER_ID,
+): Promise<void> {
+  const ref = graphRef(graphId).collection("lessons").doc(conceptId);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const lesson = snap.data() as Lesson;
+    tx.update(ref, { messages: [...lesson.messages, ...messages] });
+  });
+}
+
+export async function saveMasteryCheck(
+  sessionId: string,
+  conceptId: string,
+  question: string,
+  graphId: string = DEMO_USER_ID,
+): Promise<Check> {
+  const check: Check = {
+    id: randomUUID(),
+    sessionId,
+    phase: "mastery",
+    conceptIds: [conceptId],
+    question,
+    answer: null,
+    verdict: null,
+    createdAt: Date.now(),
+  };
+  await graphRef(graphId).collection("checks").doc(check.id).set(check);
+  return check;
+}
+
+export async function recordCheckResult(
+  checkId: string,
+  answer: string,
+  verdict: "pass" | "fail",
+  graphId: string = DEMO_USER_ID,
+): Promise<void> {
+  await graphRef(graphId)
+    .collection("checks")
+    .doc(checkId)
+    .update({ answer, verdict });
+}
+
+/** Unlock a Concept after a passed mastery Check. */
+export async function unlockConcept(
+  conceptId: string,
+  graphId: string = DEMO_USER_ID,
+): Promise<void> {
+  await graphRef(graphId)
+    .collection("concepts")
+    .doc(conceptId)
+    .update({ status: "unlocked" });
+}
+
+/** The next Locked Concept on the Path, or null when the Path is done. */
+export function nextLockedConcept(concepts: Concept[]): Concept | null {
+  return (
+    concepts
+      .filter((c) => c.status === "locked" && c.order !== null)
+      .sort((a, b) => a.order! - b.order!)[0] ?? null
+  );
+}
+
+export async function completeSession(
+  session: Session,
+  recap: string,
+  graphId: string = DEMO_USER_ID,
+): Promise<void> {
+  await graphRef(graphId).collection("sessions").doc(session.id).update({
+    phase: "complete",
+    activeConceptId: null,
+    recap,
+  });
+}
+
+export async function getLessons(
+  sessionId: string,
+  graphId: string = DEMO_USER_ID,
+): Promise<Lesson[]> {
+  const snap = await graphRef(graphId)
+    .collection("lessons")
+    .where("sessionId", "==", sessionId)
+    .get();
+  return snap.docs.map((d) => d.data() as Lesson);
+}
+
 /** The latest Session, its Concepts and Checks — what the UI rehydrates from. */
 export async function getCurrentState(graphId: string = DEMO_USER_ID): Promise<{
   session: Session | null;
   concepts: Concept[];
   checks: Check[];
+  lessons: Lesson[];
 }> {
   const graph = graphRef(graphId);
   const latest = await graph
@@ -194,7 +326,8 @@ export async function getCurrentState(graphId: string = DEMO_USER_ID): Promise<{
     .orderBy("createdAt", "desc")
     .limit(1)
     .get();
-  if (latest.empty) return { session: null, concepts: [], checks: [] };
+  if (latest.empty)
+    return { session: null, concepts: [], checks: [], lessons: [] };
 
   const session = latest.docs[0].data() as Session;
   const conceptDocs = await graph
@@ -204,7 +337,10 @@ export async function getCurrentState(graphId: string = DEMO_USER_ID): Promise<{
   const concepts = conceptDocs.docs
     .map((d) => d.data() as Concept)
     .sort((a, b) => a.id.localeCompare(b.id));
-  const checks = await getChecks(session.id, graphId);
+  const [checks, lessons] = await Promise.all([
+    getChecks(session.id, graphId),
+    getLessons(session.id, graphId),
+  ]);
 
-  return { session, concepts, checks };
+  return { session, concepts, checks, lessons };
 }

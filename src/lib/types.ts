@@ -51,5 +51,34 @@ export interface Session {
   phase: SessionPhase;
   /** The one Active Concept during Learning; null otherwise. */
   activeConceptId: string | null;
+  /** The closing Recap; set when the Session completes. */
+  recap: string | null;
   createdAt: number;
+}
+
+export type LessonMessageKind =
+  | "exposition"
+  | "user"
+  | "reply"
+  | "check-question"
+  | "check-answer"
+  | "check-feedback";
+
+export interface LessonMessage {
+  kind: LessonMessageKind;
+  text: string;
+  /** Set on check-* messages: the mastery Check they belong to. */
+  checkId?: string;
+  createdAt: number;
+}
+
+/**
+ * The record of everything that happened while a Concept was Active:
+ * exposition, free-form Q&A, and every mastery Check attempt.
+ */
+export interface Lesson {
+  /** Doc id == conceptId (one Lesson per Concept). */
+  conceptId: string;
+  sessionId: string;
+  messages: LessonMessage[];
 }

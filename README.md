@@ -1,6 +1,6 @@
 # Meno
 
-A learning assistant built for the **All Things Agentic Hackathon** — Track 2, "The Collaborative Partner."
+A learning assistant that turns any topic into a personal, adaptive curriculum.
 
 Give it a topic (or a concept you're stuck on), and the agent investigates it, figures out what you need to know first, asks you questions to find out where you actually are, then walks you through it one atomic concept at a time — quizzing you as it goes and adapting the path when you struggle or when you already know more than it assumed. Everything you unlock becomes a node in a personal knowledge graph you can inspect, correct, and grow over time.
 
@@ -61,4 +61,4 @@ The Cloud Run service's attached service account needs the `roles/aiplatform.use
 
 ## Status
 
-Early build — in progress for the hackathon deadline (Aug 31, 2026). Current scope is a single learning session per demo user (no auth), text-only topic input (file upload planned), and a bounded adaptive path (insert-remedial / skip-next). Cross-session graph merging, richer graph editing (merge nodes, manual edges), and a dedicated LLM-analysis layer over the edit audit log are explicit future work.
+Early build — in progress. Current scope is a single learning session per demo user (no auth), text-only topic input (file upload planned), and a bounded adaptive path (insert-remedial / skip-next). Cross-session graph merging, richer graph editing (merge nodes, manual edges), and a dedicated LLM-analysis layer over the edit audit log are explicit future work.

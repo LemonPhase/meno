@@ -1,47 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { scriptModelResponse, clearScriptedResponses } from "@/ai/scripted";
+import { clearScriptedResponses } from "@/ai/scripted";
 import { GET, POST } from "@/app/api/session/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
-import type { Concept, Session } from "@/lib/types";
+import type { Concept } from "@/lib/types";
+import { jsonRequest, startInvestigatedSession } from "./helpers";
 
 // Black-box tests over the server interface: call the route handlers the way
 // the browser would, then assert on the response and on what Firestore holds.
-
-function postSession(topic: unknown) {
-  return POST(
-    new Request("http://test/api/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic }),
-    }),
-  );
-}
-
-const RESEARCH_NOTES = "Notes: attention builds on dot products and softmax.";
-
-const EXTRACTION = JSON.stringify({
-  concepts: [
-    {
-      key: "dot-product",
-      label: "Dot product",
-      summary: "Multiplying two vectors into a scalar.",
-      requires: [],
-    },
-    {
-      key: "softmax",
-      label: "Softmax",
-      summary: "Turning scores into a probability distribution.",
-      requires: ["dot-product"],
-    },
-    {
-      key: "attention",
-      label: "Attention",
-      summary: "Weighting values by query-key similarity.",
-      requires: ["dot-product", "softmax", "not-a-real-key", "attention"],
-    },
-  ],
-});
 
 beforeEach(async () => {
   clearScriptedResponses();
@@ -50,12 +16,8 @@ beforeEach(async () => {
 
 describe("POST /api/session", () => {
   it("creates a Session, investigates the Topic, and seeds the Graph", async () => {
-    scriptModelResponse(RESEARCH_NOTES, EXTRACTION);
+    const body = await startInvestigatedSession();
 
-    const res = await postSession("attention mechanisms");
-    expect(res.status).toBe(200);
-
-    const body: { session: Session; concepts: Concept[] } = await res.json();
     expect(body.session.topic).toBe("attention mechanisms");
     expect(body.session.phase).toBe("diagnosing");
     expect(body.concepts).toHaveLength(3);
@@ -89,9 +51,24 @@ describe("POST /api/session", () => {
     }
   });
 
+  it("generates diagnostic Checks covering the Concepts", async () => {
+    const body = await startInvestigatedSession();
+
+    expect(body.checks).toHaveLength(3);
+    const conceptIds = new Set(body.concepts.map((c) => c.id));
+    for (const check of body.checks) {
+      expect(check.phase).toBe("diagnostic");
+      expect(check.sessionId).toBe(body.session.id);
+      expect(check.answer).toBeNull();
+      for (const id of check.conceptIds) expect(conceptIds.has(id)).toBe(true);
+    }
+  });
+
   it("rejects a missing or blank topic", async () => {
-    expect((await postSession("   ")).status).toBe(400);
-    expect((await postSession(undefined)).status).toBe(400);
+    const blank = await POST(jsonRequest("/api/session", { topic: "   " }));
+    expect(blank.status).toBe(400);
+    const missing = await POST(jsonRequest("/api/session", {}));
+    expect(missing.status).toBe(400);
   });
 });
 
@@ -100,15 +77,16 @@ describe("GET /api/session", () => {
     const body = await (await GET()).json();
     expect(body.session).toBeNull();
     expect(body.concepts).toEqual([]);
+    expect(body.checks).toEqual([]);
   });
 
-  it("returns the latest Session and its Concepts", async () => {
-    scriptModelResponse(RESEARCH_NOTES, EXTRACTION);
-    const created = await (await postSession("attention mechanisms")).json();
+  it("returns the latest Session with its Concepts and Checks", async () => {
+    const created = await startInvestigatedSession();
 
     const body = await (await GET()).json();
     expect(body.session.id).toBe(created.session.id);
     expect(body.session.phase).toBe("diagnosing");
     expect(body.concepts).toHaveLength(3);
+    expect(body.checks).toHaveLength(3);
   });
 });

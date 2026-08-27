@@ -14,5 +14,8 @@ export default defineConfig({
     },
     include: ["tests/**/*.test.ts"],
     testTimeout: 15000,
+    // All tests share the emulator's single demo-user Graph; parallel test
+    // files would clobber each other's state.
+    fileParallelism: false,
   },
 });

@@ -25,6 +25,23 @@ export interface Concept {
   sessionId: string;
   /** Position on the Session's Path; null until the Path is linearized. */
   order: number | null;
+  /** Position in the investigation output; tie-breaker for linearization. */
+  extractionIndex: number;
+  createdAt: number;
+}
+
+export type CheckPhase = "diagnostic" | "mastery";
+
+export interface Check {
+  id: string;
+  sessionId: string;
+  phase: CheckPhase;
+  /** The Concepts this Check probes. */
+  conceptIds: string[];
+  question: string;
+  answer: string | null;
+  /** Mastery: pass/fail. Diagnostic outcomes land on the Concepts instead. */
+  verdict: "pass" | "fail" | null;
   createdAt: number;
 }
 

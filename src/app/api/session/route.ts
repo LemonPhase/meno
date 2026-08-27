@@ -1,7 +1,16 @@
 import { investigateTopic } from "@/ai/investigate";
-import { createSession, getCurrentState, saveInvestigation } from "@/lib/store";
+import { generateDiagnostic } from "@/ai/diagnose";
+import {
+  createSession,
+  getCurrentState,
+  saveDiagnosticChecks,
+  saveInvestigation,
+} from "@/lib/store";
 
-/** Start a Session: investigate the Topic and seed the Graph with Concepts. */
+/**
+ * Start a Session: investigate the Topic, seed the Graph with Concepts,
+ * and generate the diagnostic Checks the user will answer next.
+ */
 export async function POST(request: Request) {
   let topic: unknown;
   try {
@@ -15,12 +24,25 @@ export async function POST(request: Request) {
 
   const session = await createSession(topic.trim());
   const investigation = await investigateTopic({ topic: topic.trim() });
-  const result = await saveInvestigation(session, investigation);
+  const { session: updated, concepts } = await saveInvestigation(
+    session,
+    investigation,
+  );
 
-  return Response.json(result);
+  const diagnostic = await generateDiagnostic({
+    topic: updated.topic,
+    concepts: concepts.map(({ id, label, summary }) => ({
+      id,
+      label,
+      summary,
+    })),
+  });
+  const checks = await saveDiagnosticChecks(updated.id, diagnostic.questions);
+
+  return Response.json({ session: updated, concepts, checks });
 }
 
-/** Current state: the latest Session and its Concepts. */
+/** Current state: the latest Session, its Concepts and Checks. */
 export async function GET() {
   return Response.json(await getCurrentState());
 }

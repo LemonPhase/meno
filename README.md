@@ -62,6 +62,10 @@ Tests are black-box: they call the server interface (route handlers) the way the
 
 ### Deploy to Cloud Run
 
+**CI/CD (how deploys actually happen):** every push to `main` runs `.github/workflows/deploy.yml` — lint + the emulator test suite, then (via Workload Identity Federation, no stored keys) builds the Docker image, pushes it to Artifact Registry, and deploys to Cloud Run as the `meno-runtime` service account. Configuration comes from GitHub repo variables: `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_WIF_PROVIDER`, `GCP_DEPLOYER_SA`, `GCP_RUNTIME_SA`.
+
+**Manual deploy** (equivalent, for a machine with `gcloud`):
+
 One-time: create the runtime service account and grant it the two roles the app needs.
 
 ```bash

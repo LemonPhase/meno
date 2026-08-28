@@ -1,6 +1,7 @@
 import { advanceToNextConcept } from "@/lib/progression";
 import {
   deleteConcept,
+  getConcept,
   getCurrentState,
   renameConcept,
 } from "@/lib/store";
@@ -21,7 +22,8 @@ export async function PATCH(request: Request, { params }: Context) {
 
   const { id } = await params;
   const state = await getCurrentState();
-  const concept = state.concepts.find((c) => c.id === id);
+  const concept =
+    state.concepts.find((c) => c.id === id) ?? (await getConcept(id));
   if (!concept) {
     return Response.json({ error: "no such Concept" }, { status: 404 });
   }
@@ -37,7 +39,8 @@ export async function PATCH(request: Request, { params }: Context) {
 export async function DELETE(_request: Request, { params }: Context) {
   const { id } = await params;
   const state = await getCurrentState();
-  const concept = state.concepts.find((c) => c.id === id);
+  const concept =
+    state.concepts.find((c) => c.id === id) ?? (await getConcept(id));
   if (!concept || !state.session) {
     return Response.json({ error: "no such Concept" }, { status: 404 });
   }

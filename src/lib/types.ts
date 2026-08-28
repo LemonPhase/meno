@@ -97,3 +97,20 @@ export interface Lesson {
   sessionId: string;
   messages: LessonMessage[];
 }
+
+/**
+ * What the sidebar lists for one Session: identity plus Path progress.
+ * Derived server-side from the Session's Concepts.
+ */
+export interface SessionSummary {
+  id: string;
+  topic: string;
+  phase: SessionPhase;
+  createdAt: number;
+  /** Concepts on the Path (ordered) plus the Active one. */
+  pathLength: number;
+  /** Of those, how many are already Unlocked. */
+  pathDone: number;
+  /** All Unlocked Concepts this Session originated (incl. diagnostic skips). */
+  unlockedCount: number;
+}

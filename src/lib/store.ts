@@ -444,6 +444,7 @@ export async function deleteConcept(
       updates.requires = other.requires.filter((r) => r !== concept.id);
     }
     if (
+      other.sessionId === concept.sessionId &&
       concept.order !== null &&
       other.order !== null &&
       other.order > concept.order
@@ -520,4 +521,116 @@ export async function getCurrentState(graphId: string = DEMO_USER_ID): Promise<{
   ]);
 
   return { session, concepts, checks, lessons };
+}
+
+/** All Sessions newest-first, each with Path progress — the sidebar's data. */
+export async function listSessions(
+  graphId: string = DEMO_USER_ID,
+): Promise<import("./types").SessionSummary[]> {
+  const graph = graphRef(graphId);
+  const [sessionSnap, conceptSnap] = await Promise.all([
+    graph.collection("sessions").orderBy("createdAt", "desc").get(),
+    graph.collection("concepts").get(),
+  ]);
+  const bySession = new Map<string, Concept[]>();
+  for (const doc of conceptSnap.docs) {
+    const concept = doc.data() as Concept;
+    const list = bySession.get(concept.sessionId);
+    if (list) list.push(concept);
+    else bySession.set(concept.sessionId, [concept]);
+  }
+  return sessionSnap.docs.map((doc) => {
+    const session = doc.data() as Session;
+    const concepts = bySession.get(session.id) ?? [];
+    const onPath = concepts.filter(
+      (c) => c.order !== null || c.status === "active",
+    );
+    return {
+      id: session.id,
+      topic: session.topic,
+      phase: session.phase,
+      createdAt: session.createdAt,
+      pathLength: onPath.length,
+      pathDone: onPath.filter((c) => c.status === "unlocked").length,
+      unlockedCount: concepts.filter((c) => c.status === "unlocked").length,
+    };
+  });
+}
+
+/**
+ * One Session's full record — what the read-only archive view renders.
+ * Null when the Session doesn't exist.
+ */
+export async function getSessionRecord(
+  sessionId: string,
+  graphId: string = DEMO_USER_ID,
+): Promise<{
+  session: Session;
+  concepts: Concept[];
+  checks: Check[];
+  lessons: Lesson[];
+} | null> {
+  const doc = await graphRef(graphId)
+    .collection("sessions")
+    .doc(sessionId)
+    .get();
+  if (!doc.exists) return null;
+  const session = doc.data() as Session;
+  const conceptDocs = await graphRef(graphId)
+    .collection("concepts")
+    .where("sessionId", "==", sessionId)
+    .get();
+  const concepts = conceptDocs.docs
+    .map((d) => d.data() as Concept)
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const [checks, lessons] = await Promise.all([
+    getChecks(sessionId, graphId),
+    getLessons(sessionId, graphId),
+  ]);
+  return { session, concepts, checks, lessons };
+}
+
+/**
+ * The whole Graph: every Concept across all Sessions, plus the Sessions,
+ * Checks, Edits and Lessons — what the Graph and Progress destinations
+ * render. Small by construction (one user's accumulated learning).
+ */
+export async function getGraphOverview(graphId: string = DEMO_USER_ID): Promise<{
+  concepts: Concept[];
+  sessions: Session[];
+  checks: Check[];
+  edits: Edit[];
+  lessons: Lesson[];
+}> {
+  const graph = graphRef(graphId);
+  const [concepts, sessions, checks, edits, lessons] = await Promise.all([
+    graph.collection("concepts").get(),
+    graph.collection("sessions").orderBy("createdAt", "desc").get(),
+    graph.collection("checks").get(),
+    graph.collection("edits").orderBy("createdAt", "desc").limit(50).get(),
+    graph.collection("lessons").get(),
+  ]);
+  return {
+    concepts: concepts.docs
+      .map((d) => d.data() as Concept)
+      .sort(
+        (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
+      ),
+    sessions: sessions.docs.map((d) => d.data() as Session),
+    checks: checks.docs.map((d) => d.data() as Check),
+    edits: edits.docs.map((d) => d.data() as Edit),
+    lessons: lessons.docs.map((d) => d.data() as Lesson),
+  };
+}
+
+/** One Concept by id, from anywhere in the Graph. */
+export async function getConcept(
+  conceptId: string,
+  graphId: string = DEMO_USER_ID,
+): Promise<Concept | null> {
+  const doc = await graphRef(graphId)
+    .collection("concepts")
+    .doc(conceptId)
+    .get();
+  return doc.exists ? (doc.data() as Concept) : null;
 }

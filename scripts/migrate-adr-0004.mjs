@@ -11,19 +11,53 @@
  * Idempotent: documents already in the new shape are left alone, so it is
  * safe to run twice. Dry run by default — pass --apply to write.
  *
- *   node scripts/migrate-adr-0004.mjs                     # against the emulator
- *   node scripts/migrate-adr-0004.mjs --apply             # …and write
- *   FIRESTORE_EMULATOR_HOST= node scripts/migrate-adr-0004.mjs --apply  # production
+ *   npm run migrate                  # dry run against GCP_PROJECT_ID
+ *   npm run migrate -- --apply       # …and write
+ *   FIRESTORE_EMULATOR_HOST=127.0.0.1:8792 npm run migrate   # the emulator
+ *
+ * Credentials and project id come from .env.local, the same file the app
+ * reads — a plain `node` run doesn't pick it up the way `next` does.
  */
 import { initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
+for (const file of [".env.local", ".env"]) {
+  try {
+    process.loadEnvFile(file);
+  } catch {
+    // Not every checkout has one; the environment may supply these directly.
+  }
+}
+
+/** An env var that is set but empty is not set. */
+const env = (key) => {
+  const value = process.env[key];
+  return value && value.trim() !== "" ? value.trim() : undefined;
+};
+
 const apply = process.argv.includes("--apply");
-const graphId = process.env.MENO_GRAPH_ID ?? "demoUser";
-const projectId = process.env.GCP_PROJECT_ID ?? "demo-meno";
+const graphId = env("MENO_GRAPH_ID") ?? "demoUser";
+const emulator = env("FIRESTORE_EMULATOR_HOST");
+// Against the emulator any project id will do; against Google's Firestore
+// guessing one is how you get a confusing PERMISSION_DENIED for a project
+// that was never yours.
+const projectId = env("GCP_PROJECT_ID") ?? (emulator ? "demo-meno" : null);
+if (!projectId) {
+  console.error(
+    "GCP_PROJECT_ID is not set, and no FIRESTORE_EMULATOR_HOST either.\n" +
+      "Set GCP_PROJECT_ID (or put it in .env.local) to migrate your real\n" +
+      "Firestore, or point FIRESTORE_EMULATOR_HOST at the emulator.",
+  );
+  process.exit(1);
+}
 
 const db = getFirestore(initializeApp({ projectId }));
 const graph = db.collection("graphs").doc(graphId);
+
+// Say plainly what is about to be touched: one of these is production.
+const target = emulator
+  ? `Target: emulator at ${emulator} (project "${projectId}")`
+  : `Target: LIVE Firestore, project "${projectId}"`;
 
 const plan = [];
 const note = (what) => plan.push(what);
@@ -101,11 +135,11 @@ async function main() {
   }
 
   if (plan.length === 0) {
-    console.log(`Graph "${graphId}" is already in the ADR-0004 shape.`);
+    console.log(`${target}\nGraph "${graphId}" is already in the ADR-0004 shape.`);
     return;
   }
   console.log(
-    `${apply ? "Migrating" : "Would migrate"} graph "${graphId}" on project "${projectId}":`,
+    `${target}\n${apply ? "Migrating" : "Would migrate"} graph "${graphId}":`,
   );
   for (const line of plan) console.log(`  ${line}`);
   if (apply) {

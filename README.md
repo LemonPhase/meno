@@ -74,7 +74,10 @@ npm run migrate -- --apply      # writes it
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8792 npm run migrate
 ```
 
-It is idempotent: a graph already in the new shape is left alone.
+It reads `.env.local` for `GCP_PROJECT_ID` and credentials, names the target
+it is about to touch (live Firestore or the emulator) before doing anything,
+and refuses to run rather than guess a project id. It is idempotent: a graph
+already in the new shape is left alone.
 
 Tests are black-box: they call the server interface (route handlers) the way the browser would, running against the **Firestore emulator** (needs Java 21+; started automatically) with a **scripted fake model** substituted at the model-injection seam (`MENO_MODEL=scripted`), so no GCP credentials or network are needed.
 

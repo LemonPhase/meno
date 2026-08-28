@@ -7,6 +7,10 @@ import { POST as postDiagnostic } from "@/app/api/session/diagnostic/route";
 import { POST as postAdvance } from "@/app/api/session/advance/route";
 import { POST as postLesson } from "@/app/api/session/lesson/route";
 import { POST as postCheck } from "@/app/api/session/check/route";
+import {
+  DELETE as deleteConcept,
+  PATCH as patchConcept,
+} from "@/app/api/concepts/[id]/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import type { SessionSummary } from "@/lib/types";
@@ -122,6 +126,50 @@ describe("Concurrent Sessions", () => {
     )!;
     expect(check.sessionId).toBe(first.session.id);
     expect(check.conceptIds).toEqual([firstState.session.activeConceptId]);
+  });
+
+  // An Edit is made from a Session's own screen, so the state it hands
+  // back must be that Session's — not merely the newest in progress.
+  it("removing a Concept answers with the viewed Session, not the newest", async () => {
+    const first = await startInvestigatedSession();
+    const second = await startOverlappingSession();
+    expect(second.session.id).not.toBe(first.session.id);
+
+    const doomed = first.concepts.find((c) => c.status !== "active")!;
+    const res = await deleteConcept(
+      new Request(
+        `http://test/api/concepts/${doomed.id}?session=${first.session.id}`,
+        { method: "DELETE" },
+      ),
+      { params: Promise.resolve({ id: doomed.id }) },
+    );
+    expect(res.status).toBe(200);
+
+    const after: StateBody = await res.json();
+    expect(after.session.id).toBe(first.session.id);
+    expect(after.concepts.some((c) => c.id === doomed.id)).toBe(false);
+  });
+
+  it("renaming a Concept answers with the viewed Session, not the newest", async () => {
+    const first = await startInvestigatedSession();
+    const second = await startOverlappingSession();
+    expect(second.session.id).not.toBe(first.session.id);
+
+    const target = first.concepts[0];
+    const res = await patchConcept(
+      jsonRequest(`/api/concepts/${target.id}`, {
+        label: "Renamed",
+        sessionId: first.session.id,
+      }),
+      { params: Promise.resolve({ id: target.id }) },
+    );
+    expect(res.status).toBe(200);
+
+    const after: StateBody = await res.json();
+    expect(after.session.id).toBe(first.session.id);
+    expect(after.concepts.find((c) => c.id === target.id)?.label).toBe(
+      "Renamed",
+    );
   });
 
   it("lists every Session with its own progress", async () => {

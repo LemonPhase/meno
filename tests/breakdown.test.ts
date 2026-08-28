@@ -85,7 +85,7 @@ describe("humanizeLabel", () => {
     expect(humanizeLabel("mutually_exclusive_events")).toBe(
       "Mutually exclusive events",
     );
-    expect(humanizeLabel("vector-norms")).toBe("Vector norms");
+    expect(humanizeLabel("vector_norms")).toBe("Vector norms");
   });
 
   it("leaves a name a person would write alone", () => {
@@ -93,6 +93,13 @@ describe("humanizeLabel", () => {
       "Mutually exclusive events",
     );
     expect(humanizeLabel("Query, key, value")).toBe("Query, key, value");
-    expect(humanizeLabel("p-values")).toBe("P values");
+  });
+
+  // Hyphens carry meaning in real names, so they are never stripped.
+  it("keeps a hyphenated name hyphenated", () => {
+    expect(humanizeLabel("t-test")).toBe("t-test");
+    expect(humanizeLabel("chi-squared")).toBe("chi-squared");
+    expect(humanizeLabel("non-linear")).toBe("non-linear");
+    expect(humanizeLabel("p-values")).toBe("p-values");
   });
 });

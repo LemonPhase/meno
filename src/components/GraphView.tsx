@@ -68,8 +68,17 @@ export default function GraphView({
   }, [renaming, reviewing]);
 
   const selected = concepts.find((c) => c.id === shown) ?? null;
+  // ADR-0004 lets one Concept be taught in several Sessions, so there can
+  // be several Lessons for it. Show the one from the Session the panel
+  // names, or the newest — never whichever Firestore happened to return.
   const lesson = selected
-    ? (lessons.find((l) => l.conceptId === selected.id) ?? null)
+    ? (lessons.find(
+        (l) =>
+          l.conceptId === selected.id &&
+          l.sessionId === selected.originSessionId,
+      ) ??
+      lessons.filter((l) => l.conceptId === selected.id).at(-1) ??
+      null)
     : null;
   const sessionOf = selected
     ? sessions.find((s) => s.id === selected.originSessionId)
@@ -114,8 +123,19 @@ export default function GraphView({
           so a Concept's detail is never below the fold. */}
       <div
         className={`gcanvas${open ? " open" : ""}${open && reviewing ? " reviewing" : ""}`}
-        onTransitionEnd={() => {
-          if (sel === null) setShown(null);
+        onTransitionEnd={(e) => {
+          // transitionend bubbles, so this fires for the panel's own 0.2s
+          // fade and for node transforms too — either would clear the
+          // content before the track finished collapsing, which is the
+          // blank-then-collapse `shown` exists to avoid. Only the track
+          // itself counts: the column here, the row below 1100px.
+          const target = e.target as HTMLElement;
+          const collapsed =
+            (target === e.currentTarget &&
+              e.propertyName === "grid-template-columns") ||
+            (target.classList?.contains("gdetail") &&
+              e.propertyName === "grid-template-rows");
+          if (collapsed && sel === null) setShown(null);
         }}
       >
         <div className="graphwrap">

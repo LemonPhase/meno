@@ -109,7 +109,9 @@ export default function ProgressPage() {
       </div>
       <div className="mrow">
         <span>Edits to your graph</span>
-        <b>{data.edits.length}</b>
+        {/* The overview returns the 50 most recent, so past that the
+            honest thing to show is "50+", not a number that stops. */}
+        <b>{data.edits.length >= 50 ? "50+" : data.edits.length}</b>
       </div>
 
       <div style={{ marginTop: 40 }}>

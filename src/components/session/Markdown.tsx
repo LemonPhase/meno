@@ -37,41 +37,78 @@ const rehypePlugins: Options["rehypePlugins"] = [
  * remark-math reads anything after an opening `$$` as a fence info string,
  * exactly as a code fence does, and drops it — so a model writing
  * `$$\begin{aligned}` loses the `\begin`, never closes the block, and the
- * parse error eats the rest of the message. Give every `$$` its own line.
- * Only leading and trailing `$$` move, so prose is never re-flowed, and
- * indentation is kept so a formula inside a list stays inside it.
+ * parse error eats the rest of the message. Give the fences of a display
+ * block their own lines, keeping indentation so a formula inside a list
+ * stays inside it.
+ *
+ * The rewrite is deliberately narrow. `$$` is only a fence when a block is
+ * being opened or closed, so the state of that block is tracked: a leading
+ * `$$` splits only outside one, a trailing `$$` only inside one. Without
+ * that, `The result is $$E = mc^2$$` — inline maths mid-sentence, and one
+ * of the commonest things a model writes — would gain a dangling `$$` and
+ * open an unterminated block that swallows the rest of the message, which
+ * is the very failure this exists to prevent.
  */
 export function normalizeDisplayMath(src: string): string {
   const out: string[] = [];
   let fence: string | null = null;
+  let inMath = false;
 
   for (const line of src.split("\n")) {
     const trimmed = line.trim();
+
     const opener = /^(`{3,}|~{3,})/.exec(trimmed);
-    if (opener) {
+    if (opener && !inMath) {
       if (fence === null) fence = opener[1][0];
       else if (trimmed.startsWith(fence)) fence = null;
       out.push(line);
       continue;
     }
-    if (fence !== null || !trimmed.includes("$$")) {
+    // An indented code block is content too, and no fence marks it.
+    if (fence !== null || (!inMath && /^(?: {4}|\t)/.test(line))) {
+      out.push(line);
+      continue;
+    }
+    if (!trimmed.includes("$$")) {
       out.push(line);
       continue;
     }
 
     const indent = line.slice(0, line.length - line.trimStart().length);
-    let rest = trimmed;
-    const tail: string[] = [];
-    while (rest.startsWith("$$") && rest !== "$$") {
+    const opens = trimmed.startsWith("$$");
+    const closes = trimmed.endsWith("$$");
+    const bare = trimmed === "$$";
+
+    if (bare) {
+      out.push(line);
+      inMath = !inMath;
+    } else if (inMath) {
+      // Looking for the closing fence; anything else is formula content.
+      if (closes) {
+        out.push(indent + trimmed.slice(0, -2).trim());
+        out.push(`${indent}$$`);
+        inMath = false;
+      } else {
+        out.push(line);
+      }
+    } else if (opens && closes) {
+      // A whole-line display formula: `$$ … $$` split onto three lines.
       out.push(`${indent}$$`);
-      rest = rest.slice(2).trim();
+      out.push(indent + trimmed.slice(2, -2).trim());
+      out.push(`${indent}$$`);
+    } else if (opens && !trimmed.slice(2).includes("$$")) {
+      // An opening fence the model glued to the start of its formula. A
+      // second `$$` later on the line would mean the first one is closed
+      // inline instead, and nothing here is a fence.
+      out.push(`${indent}$$`);
+      out.push(indent + trimmed.slice(2).trim());
+      inMath = true;
+    } else {
+      // `$$` somewhere inside prose. Ambiguous, and not ours to resolve —
+      // rewriting it is what breaks the sentence, so leave it exactly as
+      // written and let remark-math read it.
+      out.push(line);
     }
-    while (rest.endsWith("$$") && rest !== "$$") {
-      tail.unshift(`${indent}$$`);
-      rest = rest.slice(0, -2).trim();
-    }
-    if (rest) out.push(indent + rest);
-    out.push(...tail);
   }
   return out.join("\n");
 }

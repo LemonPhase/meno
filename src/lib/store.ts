@@ -272,9 +272,11 @@ export async function getChecks(
     .collection("checks")
     .where("sessionId", "==", sessionId)
     .get();
+  // By when they were written: ids sort meaninglessly (mastery ids are
+  // UUIDs, and `_diag_10` sorts before `_diag_2`).
   return snap.docs
     .map((d) => d.data() as Check)
-    .sort((a, b) => a.id.localeCompare(b.id));
+    .sort((a, b) => a.createdAt - b.createdAt);
 }
 
 /**
@@ -488,11 +490,15 @@ export function nextLockedConcept(
  * Models sometimes hand back an identifier where a name belongs; a Concept
  * label is read by a person, so `mutually_exclusive_events` becomes
  * "Mutually exclusive events".
+ *
+ * Only snake_case counts. Hyphens are load-bearing in real names — t-test,
+ * chi-squared, non-linear, x-axis — and stripping them renames the thing
+ * rather than tidying it.
  */
 export function humanizeLabel(label: string): string {
   const trimmed = label.trim();
-  if (!/^[\p{Ll}\p{N}]+([_-][\p{Ll}\p{N}]+)+$/u.test(trimmed)) return trimmed;
-  const words = trimmed.split(/[_-]/);
+  if (!/^[\p{Ll}\p{N}]+(_[\p{Ll}\p{N}]+)+$/u.test(trimmed)) return trimmed;
+  const words = trimmed.split("_");
   return words[0].charAt(0).toUpperCase() + words[0].slice(1) + " " + words.slice(1).join(" ");
 }
 
@@ -504,12 +510,13 @@ export async function spliceRemedialConcept(
   graphId: string = DEMO_USER_ID,
 ): Promise<Concept> {
   const graph = graphRef(graphId);
-  const remedialCount = session.path.filter(
-    (e) => e.origin === "remedial",
-  ).length;
 
   const concept: Concept = {
-    id: `${session.id.slice(0, 8)}_rem${remedialCount + 1}`,
+    // Not derived from a count: two "Break it down" requests in flight at
+    // once would both compute the same id, the second overwriting the
+    // first while both landed on the Path. A deletion would free an id to
+    // be reused, too.
+    id: `${session.id.slice(0, 8)}_rem_${randomUUID().slice(0, 8)}`,
     label: humanizeLabel(remedial.label),
     summary: remedial.summary,
     unlocked: false,
@@ -699,17 +706,6 @@ export function formatEditContext(edits: Edit[]): string {
 ${lines.join("\n")}`;
 }
 
-export async function getSession(
-  sessionId: string,
-  graphId: string = DEMO_USER_ID,
-): Promise<Session | null> {
-  const doc = await graphRef(graphId)
-    .collection("sessions")
-    .doc(sessionId)
-    .get();
-  return doc.exists ? asSession(doc.data()!) : null;
-}
-
 /**
  * The Session the app opens on: the most recently created one still in
  * progress, else the most recent of all (its record).
@@ -792,7 +788,17 @@ export async function listSessions(
       phase: session.phase,
       createdAt: session.createdAt,
       pathLength: session.path.length,
-      pathDone: session.path.filter((e) => unlocked.has(e.conceptId)).length,
+      // How far along this Path the learner is, which is where the Active
+      // Concept sits — not a count of unlocked entries, since a Concept
+      // further down may already have been unlocked by another Session.
+      pathDone: (() => {
+        const at = session.path.findIndex(
+          (e) => e.conceptId === session.activeConceptId,
+        );
+        return at >= 0
+          ? at
+          : session.path.filter((e) => unlocked.has(e.conceptId)).length;
+      })(),
       unlockedCount: session.conceptIds.filter((id) => unlocked.has(id)).length,
     };
   });
@@ -834,15 +840,21 @@ export async function getGraphOverview(graphId: string = DEMO_USER_ID): Promise<
       s.path.filter((e) => e.origin === "remedial").map((e) => e.conceptId),
     ),
   );
-  // Across the whole Graph there is no single Path, so order is null and
-  // status is the Graph's own view: learned, being learned somewhere, or
+  // Across the whole Graph there is no single Path, but whether a Concept
+  // ever sat on one still distinguishes a Concept skipped mid-Session from
+  // one the diagnostic found the learner already knew, so keep that much:
+  // an order of 0 where some Session placed it, null where none did.
+  const placed = new Set(
+    sessions.flatMap((s) => s.path.map((e) => e.conceptId)),
+  );
+  // Status is the Graph's own view: learned, being learned somewhere, or
   // not yet reached.
   const concepts: SessionConcept[] = conceptSnap.docs
     .map((d) => asConcept(d.data()))
     .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
     .map((c) => ({
       ...c,
-      order: null,
+      order: placed.has(c.id) ? 0 : null,
       origin: remedial.has(c.id) ? ("remedial" as const) : ("planned" as const),
       status: c.unlocked ? "unlocked" : active.has(c.id) ? "active" : "locked",
     }));

@@ -40,4 +40,60 @@ describe("normalizeDisplayMath", () => {
     const src = ["```", "$$not math$$", "```"].join("\n");
     expect(normalizeDisplayMath(src)).toBe(src);
   });
+
+  it("does not rewrite $$ inside an indented code block", () => {
+    const src = ["Code:", "", "    $$x = 1$$"].join("\n");
+    expect(normalizeDisplayMath(src)).toBe(src);
+  });
+
+  // The rewrite's own failure mode: a dangling `$$` opens a block that
+  // never closes, and the parse error swallows the rest of the message.
+  // Every shape below must come back byte-identical.
+  describe("leaves $$ inside prose alone", () => {
+    const untouched = [
+      "The famous result is $$E = mc^2$$",
+      "The famous result is $$E = mc^2$$, and here is why.",
+      "$$E = mc^2$$ is famous.",
+      "## The identity $$e^{i\\pi} = -1$$",
+      "- $$\\begin{aligned} x &= 1 \\end{aligned}$$",
+      "> $$\\begin{aligned} x &= 1 \\end{aligned}$$",
+    ];
+    for (const src of untouched) {
+      it(src.slice(0, 44), () => expect(normalizeDisplayMath(src)).toBe(src));
+    }
+  });
+
+  it("does not let a prose $$ leak into the lines after it", () => {
+    const src = [
+      "$$E = mc^2$$ is famous.",
+      "",
+      "And this paragraph must survive.",
+      "",
+      "So must this one.",
+    ].join("\n");
+    expect(normalizeDisplayMath(src)).toBe(src);
+  });
+
+  it("still splits a glued fence when prose follows the block", () => {
+    const src = [
+      "Here it is:",
+      "$$\\begin{aligned}",
+      "x &= 1",
+      "\\end{aligned}$$",
+      "",
+      "And prose after.",
+    ].join("\n");
+    expect(normalizeDisplayMath(src)).toBe(
+      [
+        "Here it is:",
+        "$$",
+        "\\begin{aligned}",
+        "x &= 1",
+        "\\end{aligned}",
+        "$$",
+        "",
+        "And prose after.",
+      ].join("\n"),
+    );
+  });
 });

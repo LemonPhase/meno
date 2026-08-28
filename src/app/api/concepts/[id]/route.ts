@@ -1,3 +1,4 @@
+import { sessionIdFrom } from "@/lib/api";
 import {
   deleteConcept,
   getGraphOverview,
@@ -15,12 +16,13 @@ async function conceptById(id: string) {
 
 /** Rename a Concept (any status); recorded append-only as an Edit. */
 export async function PATCH(request: Request, { params }: Context) {
-  let label: unknown;
+  let body: Record<string, unknown>;
   try {
-    ({ label } = await request.json());
+    body = await request.json();
   } catch {
     return Response.json({ error: "invalid JSON body" }, { status: 400 });
   }
+  const label = body.label;
   if (typeof label !== "string" || label.trim() === "") {
     return Response.json({ error: "label is required" }, { status: 400 });
   }
@@ -32,7 +34,7 @@ export async function PATCH(request: Request, { params }: Context) {
   }
 
   await renameConcept(concept, label.trim());
-  return Response.json(await getSessionState());
+  return Response.json(await getSessionState(sessionIdFrom(request, body)));
 }
 
 /**
@@ -40,7 +42,7 @@ export async function PATCH(request: Request, { params }: Context) {
  * learned: a Session mid-Lesson on a Concept that vanished has no honest
  * state to be in — finish or skip it there first.
  */
-export async function DELETE(_request: Request, { params }: Context) {
+export async function DELETE(request: Request, { params }: Context) {
   const { id } = await params;
   const concept = await conceptById(id);
   if (!concept) {
@@ -58,5 +60,7 @@ export async function DELETE(_request: Request, { params }: Context) {
   }
 
   await deleteConcept(concept);
-  return Response.json(await getSessionState());
+  // The viewed Session, not merely the newest: an Edit made from one
+  // Session must not hand back another Session's state.
+  return Response.json(await getSessionState(sessionIdFrom(request)));
 }

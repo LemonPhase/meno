@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import LessonFlow from "@/components/session/LessonFlow";
+import Markdown from "@/components/session/Markdown";
 import PathRail from "@/components/session/PathRail";
 import type { Check, Lesson, Session, SessionConcept } from "@/lib/types";
 import { roman, timeAgo } from "@/lib/ui";
@@ -80,7 +81,7 @@ export default function ArchiveView({
 
             {session.recap && (
               <div className="recap" style={{ marginTop: 22 }}>
-                <p>{session.recap}</p>
+                <Markdown text={session.recap} />
               </div>
             )}
 

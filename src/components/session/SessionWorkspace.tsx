@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import LessonFlow, { EventLine } from "@/components/session/LessonFlow";
+import Markdown from "@/components/session/Markdown";
 import PathRail from "@/components/session/PathRail";
 import TopicEntry from "@/components/session/TopicEntry";
 import type { Check, Lesson, Session, SessionConcept } from "@/lib/types";
@@ -128,8 +129,11 @@ export default function SessionWorkspace({
     setError(null);
     const payload =
       method === "POST" ? { sessionId: target, ...(body ?? {}) } : body;
+    // A DELETE carries no body, so the target rides in the query string —
+    // otherwise the route answers with whichever Session is newest.
+    const href = target ? `${url}?session=${encodeURIComponent(target)}` : url;
     try {
-      const res = await fetch(url, {
+      const res = await fetch(href, {
         method,
         headers: { "Content-Type": "application/json" },
         ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
@@ -611,7 +615,7 @@ function Complete({ state }: { state: State }) {
       <span className="kicker sc">{state.session!.topic} · complete</span>
       <h1 className="h-display">That is the path.</h1>
       <div className="recap" style={{ marginTop: 22 }}>
-        <p>{state.session!.recap}</p>
+        <Markdown text={state.session!.recap!} />
       </div>
       <span className="kicker sc">What you unlocked</span>
       <ol className="tally">

@@ -114,11 +114,21 @@ ${research.text}`,
 
     // Drop requires entries pointing at unknown keys and self-references,
     // and attachTo ids the graph doesn't actually hold.
-    const keys = new Set(out.concepts.map((c) => c.key));
+    //
+    // A repeated key would resolve to one Concept id twice, putting it on
+    // the Session twice and writing it twice in the same batch, so only
+    // the first of a key survives.
+    const seen = new Set<string>();
+    const found = out.concepts.filter((c) => {
+      if (seen.has(c.key)) return false;
+      seen.add(c.key);
+      return true;
+    });
+    const keys = new Set(found.map((c) => c.key));
     const existingIds = new Set(existing.map((c) => c.id));
     const claimed = new Set<string>();
     return {
-      concepts: out.concepts.map((c) => {
+      concepts: found.map((c) => {
         // Two found concepts must never attach to the same Concept.
         const attachTo =
           c.attachTo && existingIds.has(c.attachTo) && !claimed.has(c.attachTo)

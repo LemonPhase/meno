@@ -6,6 +6,7 @@ import { GET as getSession } from "@/app/api/sessions/[id]/route";
 import { POST as postDiagnostic } from "@/app/api/session/diagnostic/route";
 import { POST as postAdvance } from "@/app/api/session/advance/route";
 import { POST as postLesson } from "@/app/api/session/lesson/route";
+import { POST as postCheck } from "@/app/api/session/check/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import type { SessionSummary } from "@/lib/types";
@@ -96,6 +97,31 @@ describe("Concurrent Sessions", () => {
 
     const landing: StateBody = await (await GET()).json();
     expect(landing.session.id).toBe(second.session.id);
+  });
+
+  it("mastery check targets the Session named in the body, not the newest", async () => {
+    const first = await startInvestigatedSession();
+    await intoLearning(first.session.id, first.checks);
+    const second = await startOverlappingSession();
+    await intoLearning(second.session.id, second.checks);
+
+    // "Test me" is sent with the viewed Session in the body, not the URL.
+    const firstState: StateBody = await (
+      await getSession(new Request("http://test"), ctx(first.session.id))
+    ).json();
+
+    scriptModelResponse(JSON.stringify({ question: "Which dot product?" }));
+    const res = await postCheck(
+      jsonRequest("/api/session/check", { sessionId: first.session.id }),
+    );
+    expect(res.status).toBe(200);
+    const after: StateBody = await res.json();
+
+    const check = after.checks.find(
+      (c) => c.phase === "mastery" && c.verdict === null,
+    )!;
+    expect(check.sessionId).toBe(first.session.id);
+    expect(check.conceptIds).toEqual([firstState.session.activeConceptId]);
   });
 
   it("lists every Session with its own progress", async () => {

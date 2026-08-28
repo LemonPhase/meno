@@ -13,7 +13,15 @@ import {
  * already pending is returned rather than regenerated.
  */
 export async function POST(request?: Request) {
-  const state = await getSessionState(sessionIdFrom(request));
+  let body: Record<string, unknown> = {};
+  if (request) {
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
+    }
+  }
+  const state = await getSessionState(sessionIdFrom(request, body));
   const { session } = state;
   if (!session || session.phase !== "learning" || !session.activeConceptId) {
     return Response.json(

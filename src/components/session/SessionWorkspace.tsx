@@ -5,7 +5,7 @@
 // then settles into the right rail once Learning begins.
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import LessonFlow, { EventLine } from "@/components/session/LessonFlow";
 import Markdown from "@/components/session/Markdown";
 import PathRail from "@/components/session/PathRail";
@@ -457,6 +457,7 @@ function Learning({
   onDismissResume: () => void;
 }) {
   const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const lesson = state.lessons.find((l) => l.conceptId === active.id);
   const pendingCheck = state.checks.find(
     (c) =>
@@ -489,6 +490,8 @@ function Learning({
     const text = input.trim();
     if (!text || busy) return;
     setInput("");
+    // The composer auto-grows imperatively; shrink it back to one line.
+    if (inputRef.current) inputRef.current.style.height = "auto";
     if (pendingCheck) {
       await call("answer", "/api/session/check/answer", { answer: text });
     } else {
@@ -534,6 +537,7 @@ function Learning({
       <div className={`composer${pendingCheck ? " check" : ""}`}>
         <div className="field">
           <textarea
+            ref={inputRef}
             rows={1}
             value={input}
             placeholder={

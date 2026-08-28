@@ -7,15 +7,15 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type {
   Check,
-  Concept,
   Edit,
   Session,
+  SessionConcept,
   SessionSummary,
 } from "@/lib/types";
 import { roman, timeAgo } from "@/lib/ui";
 
 type Overview = {
-  concepts: Concept[];
+  concepts: SessionConcept[];
   sessions: Session[];
   checks: Check[];
   edits: Edit[];

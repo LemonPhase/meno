@@ -245,3 +245,79 @@ detours, and encourage them to revisit their knowledge graph.`,
     return { recap: res.text };
   },
 );
+
+/**
+ * "Break it down" (CONTEXT.md): the learner says the Active Concept is too
+ * hard. Too hard means a prerequisite is missing — every Concept should sit
+ * on the leaf of what they already know — so the answer is an
+ * insert_remedial Adjustment, never a restructuring of the Concept itself.
+ * Only when the transcript carries no signal at all does it ask instead.
+ */
+export const BreakdownSchema = z.object({
+  action: z
+    .enum(["insert_remedial", "ask"])
+    .describe(
+      "insert_remedial when the lesson so far shows what they are missing; " +
+        "ask only when there is genuinely nothing to go on yet",
+    ),
+  message: z
+    .string()
+    .describe(
+      "insert_remedial: one or two sentences naming the gap and the detour. " +
+        "ask: a single question about what is not landing.",
+    ),
+  remedial: z
+    .object({
+      label: z.string(),
+      summary: z.string().describe("one sentence: what this fills in"),
+    })
+    .optional()
+    .describe("required when action is insert_remedial"),
+});
+
+export const breakDownConcept = ai.defineFlow(
+  {
+    name: "breakDownConcept",
+    inputSchema: z.object({
+      topic: z.string(),
+      concept: z.object({ label: z.string(), summary: z.string() }),
+      lesson: z.object({
+        messages: z.array(z.object({ kind: z.string(), text: z.string() })),
+      }),
+      unlockedLabels: z.array(z.string()).default([]),
+      editContext: z.string().default(""),
+    }),
+    outputSchema: BreakdownSchema,
+  },
+  async ({ topic, concept, lesson, unlockedLabels, editContext }) => {
+    const res = await ai.generate({
+      model,
+      prompt: `You are a warm, precise tutor. The learner's goal: ${topic}.
+${conceptIntro(concept)}
+They already understand: ${unlockedLabels.join(", ") || "(nothing yet)"}.
+
+The lesson so far:
+${transcript(lesson as Lesson)}
+
+The learner has just said this concept is too hard. That means something it
+rests on is missing, not that the concept should be broken into pieces.
+
+From the lesson so far — their questions, and any check attempts — identify
+the ONE prerequisite that is actually missing and return "insert_remedial"
+with a small, atomic remedial concept for it, plus a message naming the gap
+and the detour in a sentence or two. Do not propose something they already
+understand.
+
+Only if the lesson so far gives you genuinely nothing to go on, return "ask"
+with a single question about what is not landing.
+${editContext ? `\n${editContext}\nNever insert a remedial that recreates something they deleted.` : ""}`,
+      output: { schema: BreakdownSchema },
+    });
+    const out = res.output;
+    if (!out) throw new Error("break down: generation returned no output");
+    if (out.action === "insert_remedial" && !out.remedial) {
+      return { ...out, action: "ask" as const };
+    }
+    return out;
+  },
+);

@@ -41,7 +41,10 @@ export default function TopicEntry({
         body: JSON.stringify({ topic: trimmed }),
       });
       if (!res.ok) {
-        throw new Error((await res.json()).error ?? res.statusText);
+        // An error body isn't always JSON (a crashed route returns HTML),
+        // so fall back to the status rather than throwing over the throw.
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.error ?? `${res.status} ${res.statusText}`);
       }
       announceSessionsChanged();
       onDone(await res.json());

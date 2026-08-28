@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useState } from "react";
 import LessonFlow from "@/components/session/LessonFlow";
 import { computeLayout } from "@/lib/dag-layout";
-import type { Check, Concept, Lesson, Session } from "@/lib/types";
+import type { Check, Lesson, Session, SessionConcept } from "@/lib/types";
 
 const FULL = {
   viewWidth: 640,
@@ -32,7 +32,7 @@ export default function GraphView({
   onRename,
   onDelete,
 }: {
-  concepts: Concept[];
+  concepts: SessionConcept[];
   lessons: Lesson[];
   checks?: Check[];
   sessions?: Session[];
@@ -68,7 +68,7 @@ export default function GraphView({
     ? (lessons.find((l) => l.conceptId === selected.id) ?? null)
     : null;
   const sessionOf = selected
-    ? sessions.find((s) => s.id === selected.sessionId)
+    ? sessions.find((s) => s.id === selected.originSessionId)
     : undefined;
 
   if (concepts.length === 0) return null;

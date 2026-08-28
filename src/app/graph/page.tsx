@@ -6,11 +6,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import GraphView from "@/components/GraphView";
-import type { Check, Concept, Edit, Lesson, Session } from "@/lib/types";
+import type { Check, Edit, Lesson, Session, SessionConcept } from "@/lib/types";
 import { announceSessionsChanged, timeAgo } from "@/lib/ui";
 
 type Overview = {
-  concepts: Concept[];
+  concepts: SessionConcept[];
   sessions: Session[];
   checks: Check[];
   edits: Edit[];
@@ -37,7 +37,12 @@ export default function GraphPage() {
         headers: { "Content-Type": "application/json" },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      if (!res.ok) {
+        // An error body isn't always JSON (a crashed route returns HTML),
+        // so fall back to the status rather than throwing over the throw.
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.error ?? `${res.status} ${res.statusText}`);
+      }
       refresh();
       announceSessionsChanged();
     } catch (e) {

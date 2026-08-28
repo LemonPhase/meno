@@ -5,6 +5,7 @@ import {
   scriptModelResponse,
 } from "@/ai/scripted";
 import { PATCH, DELETE } from "@/app/api/concepts/[id]/route";
+import { GET } from "@/app/api/session/route";
 import { POST as postCheck } from "@/app/api/session/check/route";
 import { POST as postAnswer } from "@/app/api/session/check/answer/route";
 import { db } from "@/lib/firebase-admin";
@@ -131,31 +132,30 @@ describe("DELETE /api/concepts/[id]", () => {
     });
   });
 
-  it("deleting the Active Concept hands off to the next Locked one", async () => {
+  it("refuses to delete a Concept that is being learned", async () => {
     const state = await reachLearning();
     const active = byLabel(state, "Dot product");
 
-    scriptModelResponse("Softmax exposition");
     const res = await DELETE(
       new Request(`http://test/api/concepts/${active.id}`, {
         method: "DELETE",
       }),
       ctx(active.id),
     );
-    const after: StateBody = await res.json();
 
-    expect(after.concepts.find((c) => c.id === active.id)).toBeUndefined();
-    const next = byLabel(after, "Softmax");
-    expect(next.status).toBe("active");
-    expect(after.session.activeConceptId).toBe(next.id);
-    // The deleted Concept's Lesson went with it.
-    expect(after.lessons.find((l) => l.conceptId === active.id)).toBeUndefined();
+    // A Session mid-Lesson on a Concept that vanished has no honest state
+    // to be in, so this is the one thing deletion refuses.
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain("being learned");
+
+    const still = await graphRef().collection("concepts").doc(active.id).get();
+    expect(still.exists).toBe(true);
+    const edits = await graphRef().collection("edits").get();
+    expect(edits.size).toBe(0);
   });
 
-  it("deleting the last remaining Concepts completes the Session", async () => {
+  it("deleting every Locked Concept leaves the Session on the Active one", async () => {
     const state = await reachLearning();
-    // Delete softmax and attention (locked), then the active dot-product:
-    // nothing remains, so the Session completes with a Recap.
     for (const label of ["Softmax", "Attention"]) {
       const c = byLabel(state, label);
       await DELETE(
@@ -163,17 +163,13 @@ describe("DELETE /api/concepts/[id]", () => {
         ctx(c.id),
       );
     }
+
+    const after: StateBody = await (await GET()).json();
     const active = byLabel(state, "Dot product");
-    scriptModelResponse("An empty but honest recap.");
-    const res = await DELETE(
-      new Request(`http://test/api/concepts/${active.id}`, {
-        method: "DELETE",
-      }),
-      ctx(active.id),
-    );
-    const after: StateBody = await res.json();
-    expect(after.session.phase).toBe("complete");
-    expect(after.session.recap).toBe("An empty but honest recap.");
+    expect(after.concepts.map((c) => c.id)).toEqual([active.id]);
+    expect(after.session.path.map((e) => e.conceptId)).toEqual([active.id]);
+    expect(after.session.phase).toBe("learning");
+    expect(after.session.activeConceptId).toBe(active.id);
   });
 });
 

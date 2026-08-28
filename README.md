@@ -12,8 +12,10 @@ Named after Plato's *Meno* — the dialogue built around the paradox of how you 
 2. **Investigate** — the agent researches the topic with Google Search grounding and identifies its prerequisites.
 3. **Diagnose** — it asks you questions on the prerequisites and the topic itself to find your starting point.
 4. **Preview the path** — it plans an ordered list of atomic concept nodes and shows you the whole journey upfront.
-5. **Learn, one node at a time** — each node is taught and quizzed only when you reach it (lazy generation). Your answer can trigger the agent to insert a remedial node before continuing, or skip the next one if you clearly already know it — the graph reshapes live as this happens.
+5. **Learn, one node at a time** — each node is taught and quizzed only when you reach it (lazy generation). Two levers sit in the composer: **Test me** when it's too easy (it skips the teaching, never the verification), and **Break it down** when it's too hard (the agent finds the prerequisite you're missing and teaches that first, as a short detour). Your answers can also trigger the agent to insert a remedial node or skip the next one — the graph reshapes live as this happens.
 6. **Review the graph** — unlocked concepts form a node-link graph; each node links back to the session where you learned it. You can rename or delete nodes yourself; edits are recorded in an audit log that feeds back into future graph updates.
+
+Sessions behave like conversations: several can be in progress at once, each resumable where you left off, and they all feed the one graph. A topic that rests on something you've already learned *attaches* to the concept you already have rather than duplicating it — and if you've already unlocked it, it's skipped rather than taught twice.
 
 ## Stack
 

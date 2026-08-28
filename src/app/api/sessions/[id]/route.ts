@@ -2,7 +2,7 @@ import { getSessionRecord } from "@/lib/store";
 
 type Context = { params: Promise<{ id: string }> };
 
-/** One Session's full record: session, Concepts, Checks, Lessons. */
+/** One Session's full state: session, Concepts, Checks, Lessons. */
 export async function GET(_request: Request, { params }: Context) {
   const { id } = await params;
   const record = await getSessionRecord(id);

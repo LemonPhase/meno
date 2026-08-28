@@ -7,17 +7,67 @@ import type {
   Edit,
   Lesson,
   LessonMessage,
+  PathEntry,
   Session,
+  SessionConcept,
+  SessionSummary,
 } from "./types";
 import type { Investigation } from "@/ai/investigate";
 
-// Firestore layout (ADR-0002: the Graph is the durable per-user container):
+// Firestore layout (ADR-0002: the Graph is the durable per-user container;
+// ADR-0004: Path state belongs to the Session, not the Concept):
 //   graphs/{graphId}                    — one per user; graphId = user id
-//   graphs/{graphId}/sessions/{id}
-//   graphs/{graphId}/concepts/{id}
+//   graphs/{graphId}/concepts/{id}      — durable: label, requires, unlocked
+//   graphs/{graphId}/sessions/{id}      — carries conceptIds and the Path
+//   graphs/{graphId}/lessons/{sessionId__conceptId}
+//   graphs/{graphId}/checks/{id}
+//   graphs/{graphId}/edits/{id}
 
 export const graphRef = (graphId: string = DEMO_USER_ID) =>
   db.collection("graphs").doc(graphId);
+
+export const lessonKey = (sessionId: string, conceptId: string) =>
+  `${sessionId}__${conceptId}`;
+
+export type SessionState = {
+  session: Session | null;
+  concepts: SessionConcept[];
+  checks: Check[];
+  lessons: Lesson[];
+};
+
+/** A Session's own view of the Concepts it touches (ADR-0004). */
+export function decorate(
+  session: Session,
+  concepts: Concept[],
+): SessionConcept[] {
+  const place = new Map(
+    session.path.map((entry, i) => [entry.conceptId, { i, entry }]),
+  );
+  return concepts.map((concept) => {
+    const seat = place.get(concept.id);
+    return {
+      ...concept,
+      order: seat ? seat.i : null,
+      origin: seat ? seat.entry.origin : "planned",
+      status: concept.unlocked
+        ? "unlocked"
+        : session.activeConceptId === concept.id
+          ? "active"
+          : "locked",
+    };
+  });
+}
+
+async function conceptsByIds(
+  ids: string[],
+  graphId: string = DEMO_USER_ID,
+): Promise<Concept[]> {
+  if (ids.length === 0) return [];
+  const col = graphRef(graphId).collection("concepts");
+  const docs = await db.getAll(...ids.map((id) => col.doc(id)));
+  return docs.filter((d) => d.exists).map((d) => d.data() as Concept);
+}
 
 export async function createSession(
   topic: string,
@@ -29,6 +79,8 @@ export async function createSession(
     phase: "investigating",
     activeConceptId: null,
     recap: null,
+    conceptIds: [],
+    path: [],
     createdAt: Date.now(),
   };
   await graphRef(graphId).collection("sessions").doc(session.id).set(session);
@@ -36,43 +88,94 @@ export async function createSession(
 }
 
 /**
- * Persist an Investigation's concepts into the Graph and advance the
- * Session to Diagnosing. Concept ids are namespaced by session so a later
- * Session can't collide (cross-session dedup is explicitly future work).
+ * Persist an Investigation and advance the Session to Diagnosing.
+ *
+ * Attach (CONTEXT.md): a found concept the investigation matched to one
+ * already in the Graph reuses it rather than creating a duplicate — so a
+ * second Topic resting on the same prerequisite meets the same Concept.
+ * An attached Concept that is already Unlocked is "already yours": it
+ * joins the Session's concepts but never its Path.
  */
 export async function saveInvestigation(
   session: Session,
   investigation: Investigation,
   graphId: string = DEMO_USER_ID,
-): Promise<{ session: Session; concepts: Concept[] }> {
-  const idFor = (key: string) => `${session.id.slice(0, 8)}_${key}`;
+): Promise<{ session: Session; concepts: SessionConcept[] }> {
+  const graph = graphRef(graphId);
   const now = Date.now();
 
-  const concepts: Concept[] = investigation.concepts.map((c, i) => ({
-    id: idFor(c.key),
-    label: c.label,
-    summary: c.summary,
-    status: "locked",
-    skipped: false,
-    origin: "planned",
-    requires: c.requires.map(idFor),
-    sessionId: session.id,
-    order: null,
-    extractionIndex: i,
-    createdAt: now,
-  }));
+  const attachable = new Map(
+    (
+      await conceptsByIds(
+        investigation.concepts
+          .map((c) => c.attachTo)
+          .filter((id): id is string => typeof id === "string"),
+        graphId,
+      )
+    ).map((c) => [c.id, c]),
+  );
 
-  const updated: Session = { ...session, phase: "diagnosing" };
+  // Resolve every found concept to a Graph Concept id first, so `requires`
+  // can be rewritten in terms of them.
+  const idForKey = new Map<string, string>();
+  const created: Concept[] = [];
+  for (const found of investigation.concepts) {
+    const attached =
+      found.attachTo !== undefined ? attachable.get(found.attachTo) : undefined;
+    if (attached) {
+      idForKey.set(found.key, attached.id);
+    } else {
+      const id = `${session.id.slice(0, 8)}_${found.key}`;
+      idForKey.set(found.key, id);
+      created.push({
+        id,
+        label: found.label,
+        summary: found.summary,
+        unlocked: false,
+        skipped: false,
+        requires: [],
+        originSessionId: session.id,
+        createdAt: now,
+      });
+    }
+  }
+  const resolve = (key: string) => idForKey.get(key);
+  for (const concept of created) {
+    const found = investigation.concepts.find(
+      (f) => resolve(f.key) === concept.id,
+    )!;
+    // An attached Concept keeps the `requires` the Graph already holds —
+    // the user's own curation of it outranks a fresh investigation.
+    concept.requires = found.requires
+      .map(resolve)
+      .filter((id): id is string => id !== undefined && id !== concept.id);
+  }
+
+  const conceptIds = investigation.concepts
+    .map((f) => resolve(f.key))
+    .filter((id): id is string => id !== undefined);
+  const all = [...attachable.values(), ...created];
+  const byId = new Map(all.map((c) => [c.id, c]));
+
+  const updated: Session = {
+    ...session,
+    phase: "diagnosing",
+    conceptIds,
+    // No Path yet: it is the linearization applyDiagnosis produces.
+    path: [],
+  };
 
   const batch = db.batch();
-  const graph = graphRef(graphId);
-  for (const concept of concepts) {
+  for (const concept of created) {
     batch.set(graph.collection("concepts").doc(concept.id), concept);
   }
   batch.set(graph.collection("sessions").doc(session.id), updated);
   await batch.commit();
 
-  return { session: updated, concepts };
+  const ordered = conceptIds
+    .map((id) => byId.get(id))
+    .filter((c): c is Concept => c !== undefined);
+  return { session: updated, concepts: decorate(updated, ordered) };
 }
 
 /** Persist diagnostic Checks for a Session. */
@@ -114,39 +217,38 @@ export async function getChecks(
 
 /**
  * Linearize the Path: topological order of the not-known Concepts by
- * `requires` (Kahn's algorithm), tie-broken by extraction order. Known
- * prerequisites count as already satisfied.
+ * `requires` (Kahn's algorithm), tie-broken by the order they were found.
+ * Known prerequisites count as already satisfied.
  */
 export function linearizePath(
   concepts: Concept[],
   knownIds: Set<string>,
+  foundOrder: Map<string, number>,
 ): string[] {
   const toLearn = concepts.filter((c) => !knownIds.has(c.id));
   const ids = new Set(toLearn.map((c) => c.id));
-  const byId = new Map(toLearn.map((c) => [c.id, c]));
   const pending = new Map(
     toLearn.map((c) => [c.id, c.requires.filter((r) => ids.has(r))]),
   );
+  const rank = (id: string) => foundOrder.get(id) ?? Number.MAX_SAFE_INTEGER;
 
   const order: string[] = [];
   while (pending.size > 0) {
     const ready = [...pending.entries()]
       .filter(([, reqs]) => reqs.length === 0)
       .map(([id]) => id)
-      .sort(
-        (a, b) => byId.get(a)!.extractionIndex - byId.get(b)!.extractionIndex,
-      );
+      .sort((a, b) => rank(a) - rank(b));
     // Cycles shouldn't happen (investigation output is a DAG), but a model
-    // could produce one: break it by releasing the earliest-extracted node.
+    // could produce one: break it by releasing the earliest-found node.
     const next =
-      ready[0] ??
-      [...pending.keys()].sort(
-        (a, b) => byId.get(a)!.extractionIndex - byId.get(b)!.extractionIndex,
-      )[0];
+      ready[0] ?? [...pending.keys()].sort((a, b) => rank(a) - rank(b))[0];
     order.push(next);
     pending.delete(next);
     for (const [id, reqs] of pending) {
-      pending.set(id, reqs.filter((r) => r !== next));
+      pending.set(
+        id,
+        reqs.filter((r) => r !== next),
+      );
     }
   }
   return order;
@@ -154,8 +256,8 @@ export function linearizePath(
 
 /**
  * Apply a graded diagnosis: known Concepts become Unlocked+Skipped in the
- * Graph immediately; the rest get Path order; the Session moves to
- * Previewing with the diagnostic answers recorded on their Checks.
+ * Graph immediately; the rest are linearized into this Session's Path and
+ * the Session moves to Previewing.
  */
 export async function applyDiagnosis(
   session: Session,
@@ -164,21 +266,24 @@ export async function applyDiagnosis(
   graphId: string = DEMO_USER_ID,
 ): Promise<void> {
   const graph = graphRef(graphId);
-  const conceptDocs = await graph
-    .collection("concepts")
-    .where("sessionId", "==", session.id)
-    .get();
-  const concepts = conceptDocs.docs.map((d) => d.data() as Concept);
-  const known = new Set(knownConceptIds);
-  const pathOrder = linearizePath(concepts, known);
+  const concepts = await conceptsByIds(session.conceptIds, graphId);
+  const known = new Set(
+    knownConceptIds.filter((id) => session.conceptIds.includes(id)),
+  );
+  // Anything already Unlocked in the Graph is settled knowledge; it never
+  // rejoins a Path (CONTEXT.md: Attach).
+  for (const concept of concepts) if (concept.unlocked) known.add(concept.id);
+
+  const foundOrder = new Map(session.conceptIds.map((id, i) => [id, i]));
+  const pathOrder = linearizePath(concepts, known, foundOrder);
 
   const batch = db.batch();
   for (const concept of concepts) {
-    const ref = graph.collection("concepts").doc(concept.id);
-    if (known.has(concept.id)) {
-      batch.update(ref, { status: "unlocked", skipped: true, order: null });
-    } else {
-      batch.update(ref, { order: pathOrder.indexOf(concept.id) });
+    if (known.has(concept.id) && !concept.unlocked) {
+      batch.update(graph.collection("concepts").doc(concept.id), {
+        unlocked: true,
+        skipped: true,
+      });
     }
   }
   for (const { checkId, answer } of answers) {
@@ -186,6 +291,7 @@ export async function applyDiagnosis(
   }
   batch.update(graph.collection("sessions").doc(session.id), {
     phase: "previewing",
+    path: pathOrder.map((conceptId) => ({ conceptId, origin: "planned" })),
   });
   await batch.commit();
 }
@@ -204,7 +310,7 @@ const message = (
 export { message as lessonMessage };
 
 /**
- * Activate a Concept: it becomes the Session's one Active Concept and its
+ * Activate a Concept: it becomes this Session's one Active Concept and its
  * Lesson opens with the exposition. (Lazy generation: the exposition is
  * produced only now, when the Concept is reached.)
  */
@@ -221,10 +327,10 @@ export async function activateConcept(
     messages: [message("exposition", exposition)],
   };
   const batch = db.batch();
-  batch.update(graph.collection("concepts").doc(conceptId), {
-    status: "active",
-  });
-  batch.set(graph.collection("lessons").doc(conceptId), lesson);
+  batch.set(
+    graph.collection("lessons").doc(lessonKey(session.id, conceptId)),
+    lesson,
+  );
   batch.update(graph.collection("sessions").doc(session.id), {
     phase: "learning",
     activeConceptId: conceptId,
@@ -233,11 +339,14 @@ export async function activateConcept(
 }
 
 export async function appendLessonMessages(
+  sessionId: string,
   conceptId: string,
   messages: LessonMessage[],
   graphId: string = DEMO_USER_ID,
 ): Promise<void> {
-  const ref = graphRef(graphId).collection("lessons").doc(conceptId);
+  const ref = graphRef(graphId)
+    .collection("lessons")
+    .doc(lessonKey(sessionId, conceptId));
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const lesson = snap.data() as Lesson;
@@ -277,7 +386,7 @@ export async function recordCheckResult(
     .update({ answer, verdict });
 }
 
-/** Unlock a Concept after a passed mastery Check. */
+/** Unlock a Concept after a passed mastery Check — true across the Graph. */
 export async function unlockConcept(
   conceptId: string,
   graphId: string = DEMO_USER_ID,
@@ -285,16 +394,24 @@ export async function unlockConcept(
   await graphRef(graphId)
     .collection("concepts")
     .doc(conceptId)
-    .update({ status: "unlocked" });
+    .update({ unlocked: true });
 }
 
-/** The next Locked Concept on the Path, or null when the Path is done. */
-export function nextLockedConcept(concepts: Concept[]): Concept | null {
-  return (
-    concepts
-      .filter((c) => c.status === "locked" && c.order !== null)
-      .sort((a, b) => a.order! - b.order!)[0] ?? null
-  );
+/**
+ * The next Concept on the Path still to be learned — the one after the
+ * Active one, which is being learned now and so is never "next".
+ */
+export function nextLockedConcept(
+  session: Session,
+  concepts: Concept[],
+): Concept | null {
+  const byId = new Map(concepts.map((c) => [c.id, c]));
+  for (const entry of session.path) {
+    if (entry.conceptId === session.activeConceptId) continue;
+    const concept = byId.get(entry.conceptId);
+    if (concept && !concept.unlocked) return concept;
+  }
+  return null;
 }
 
 /**
@@ -310,36 +427,36 @@ export async function spliceRemedialConcept(
   graphId: string = DEMO_USER_ID,
 ): Promise<Concept> {
   const graph = graphRef(graphId);
-  const remedialCount = concepts.filter((c) => c.origin === "remedial").length;
-  const activeOrder = active.order ?? -1;
-  const maxIndex = Math.max(...concepts.map((c) => c.extractionIndex));
+  const remedialCount = session.path.filter(
+    (e) => e.origin === "remedial",
+  ).length;
 
   const concept: Concept = {
     id: `${session.id.slice(0, 8)}_rem${remedialCount + 1}`,
     label: remedial.label,
     summary: remedial.summary,
-    status: "locked",
+    unlocked: false,
     skipped: false,
-    origin: "remedial",
     requires: [],
-    sessionId: session.id,
-    order: activeOrder + 1,
-    extractionIndex: maxIndex + 1,
+    originSessionId: session.id,
     createdAt: Date.now(),
   };
 
+  const at = session.path.findIndex((e) => e.conceptId === active.id);
+  const path: PathEntry[] = [...session.path];
+  path.splice(at + 1, 0, { conceptId: concept.id, origin: "remedial" });
+
+  const wasNext = nextLockedConcept(session, concepts);
   const batch = db.batch();
   batch.set(graph.collection("concepts").doc(concept.id), concept);
-  const wasNext = nextLockedConcept(concepts);
-  for (const c of concepts) {
-    if (c.order !== null && c.order > activeOrder) {
-      batch.update(graph.collection("concepts").doc(c.id), {
-        order: c.order + 1,
-        ...(wasNext && c.id === wasNext.id
-          ? { requires: [...c.requires, concept.id] }
-          : {}),
-      });
-    }
+  batch.update(graph.collection("sessions").doc(session.id), {
+    path,
+    conceptIds: [...session.conceptIds, concept.id],
+  });
+  if (wasNext && wasNext.id !== active.id) {
+    batch.update(graph.collection("concepts").doc(wasNext.id), {
+      requires: [...wasNext.requires, concept.id],
+    });
   }
   await batch.commit();
   return concept;
@@ -351,15 +468,16 @@ export async function spliceRemedialConcept(
  * was nothing to skip.
  */
 export async function skipNextConcept(
+  session: Session,
   concepts: Concept[],
   graphId: string = DEMO_USER_ID,
 ): Promise<Concept | null> {
-  const next = nextLockedConcept(concepts);
+  const next = nextLockedConcept(session, concepts);
   if (!next) return null;
   await graphRef(graphId)
     .collection("concepts")
     .doc(next.id)
-    .update({ status: "unlocked", skipped: true });
+    .update({ unlocked: true, skipped: true });
   return next;
 }
 
@@ -411,19 +529,38 @@ export async function renameConcept(
 }
 
 /**
- * Delete a Concept (ADR-0003: never blocks, never cascades). Dependents
- * lose the entry from `requires`; a Path gap closes by shifting later
- * orders down; the Lesson goes with it; the Edit is recorded append-only.
- * Returns whether the deleted Concept was the Active one (the caller must
- * then advance the Session).
+ * The Sessions in which a Concept is currently being learned. Deleting such
+ * a Concept would leave those Sessions pointing at nothing, so it's refused
+ * (the one bound on ADR-0003's "never blocks").
+ */
+export async function sessionsLearning(
+  conceptId: string,
+  graphId: string = DEMO_USER_ID,
+): Promise<Session[]> {
+  const snap = await graphRef(graphId)
+    .collection("sessions")
+    .where("activeConceptId", "==", conceptId)
+    .get();
+  return snap.docs
+    .map((d) => d.data() as Session)
+    .filter((s) => s.phase !== "complete");
+}
+
+/**
+ * Delete a Concept (ADR-0003: never cascades). Dependents lose the entry
+ * from `requires`; it leaves every Session's Path; its Lessons go with it;
+ * the Edit is recorded append-only.
  */
 export async function deleteConcept(
-  session: Session,
   concept: Concept,
   graphId: string = DEMO_USER_ID,
-): Promise<{ wasActive: boolean }> {
+): Promise<void> {
   const graph = graphRef(graphId);
-  const all = await graph.collection("concepts").get();
+  const [conceptDocs, sessionDocs, lessonDocs] = await Promise.all([
+    graph.collection("concepts").where("requires", "array-contains", concept.id).get(),
+    graph.collection("sessions").where("conceptIds", "array-contains", concept.id).get(),
+    graph.collection("lessons").where("conceptId", "==", concept.id).get(),
+  ]);
   const edit: Edit = {
     id: randomUUID(),
     conceptId: concept.id,
@@ -435,35 +572,22 @@ export async function deleteConcept(
 
   const batch = db.batch();
   batch.delete(graph.collection("concepts").doc(concept.id));
-  batch.delete(graph.collection("lessons").doc(concept.id));
-  for (const doc of all.docs) {
+  for (const doc of lessonDocs.docs) batch.delete(doc.ref);
+  for (const doc of conceptDocs.docs) {
     const other = doc.data() as Concept;
-    if (other.id === concept.id) continue;
-    const updates: Partial<Concept> = {};
-    if (other.requires.includes(concept.id)) {
-      updates.requires = other.requires.filter((r) => r !== concept.id);
-    }
-    if (
-      other.sessionId === concept.sessionId &&
-      concept.order !== null &&
-      other.order !== null &&
-      other.order > concept.order
-    ) {
-      updates.order = other.order - 1;
-    }
-    if (Object.keys(updates).length > 0) {
-      batch.update(graph.collection("concepts").doc(other.id), updates);
-    }
+    batch.update(doc.ref, {
+      requires: other.requires.filter((r) => r !== concept.id),
+    });
   }
-  const wasActive = session.activeConceptId === concept.id;
-  if (wasActive) {
-    batch.update(graph.collection("sessions").doc(session.id), {
-      activeConceptId: null,
+  for (const doc of sessionDocs.docs) {
+    const other = doc.data() as Session;
+    batch.update(doc.ref, {
+      conceptIds: other.conceptIds.filter((id) => id !== concept.id),
+      path: other.path.filter((e) => e.conceptId !== concept.id),
     });
   }
   batch.set(graph.collection("edits").doc(edit.id), edit);
   await batch.commit();
-  return { wasActive };
 }
 
 /** Recent Edits, newest first — the context future agent calls receive. */
@@ -491,103 +615,85 @@ export function formatEditContext(edits: Edit[]): string {
 ${lines.join("\n")}`;
 }
 
-/** The latest Session, its Concepts and Checks — what the UI rehydrates from. */
-export async function getCurrentState(graphId: string = DEMO_USER_ID): Promise<{
-  session: Session | null;
-  concepts: Concept[];
-  checks: Check[];
-  lessons: Lesson[];
-}> {
-  const graph = graphRef(graphId);
-  const latest = await graph
+export async function getSession(
+  sessionId: string,
+  graphId: string = DEMO_USER_ID,
+): Promise<Session | null> {
+  const doc = await graphRef(graphId)
     .collection("sessions")
-    .orderBy("createdAt", "desc")
-    .limit(1)
+    .doc(sessionId)
     .get();
-  if (latest.empty)
-    return { session: null, concepts: [], checks: [], lessons: [] };
-
-  const session = latest.docs[0].data() as Session;
-  const conceptDocs = await graph
-    .collection("concepts")
-    .where("sessionId", "==", session.id)
-    .get();
-  const concepts = conceptDocs.docs
-    .map((d) => d.data() as Concept)
-    .sort((a, b) => a.id.localeCompare(b.id));
-  const [checks, lessons] = await Promise.all([
-    getChecks(session.id, graphId),
-    getLessons(session.id, graphId),
-  ]);
-
-  return { session, concepts, checks, lessons };
+  return doc.exists ? (doc.data() as Session) : null;
 }
 
-/** All Sessions newest-first, each with Path progress — the sidebar's data. */
+/**
+ * The Session the app opens on: the most recently created one still in
+ * progress, else the most recent of all (its record).
+ */
+export async function latestSessionId(
+  graphId: string = DEMO_USER_ID,
+): Promise<string | null> {
+  const snap = await graphRef(graphId)
+    .collection("sessions")
+    .orderBy("createdAt", "desc")
+    .get();
+  const sessions = snap.docs.map((d) => d.data() as Session);
+  const live = sessions.find((s) => s.phase !== "complete");
+  return (live ?? sessions[0])?.id ?? null;
+}
+
+/**
+ * One Session with its Concepts, Checks and Lessons — what the UI works
+ * from. Without an id, the Session the app opens on.
+ */
+export async function getSessionState(
+  sessionId?: string,
+  graphId: string = DEMO_USER_ID,
+): Promise<SessionState> {
+  const id = sessionId ?? (await latestSessionId(graphId));
+  if (!id) return { session: null, concepts: [], checks: [], lessons: [] };
+  const session = await getSession(id, graphId);
+  if (!session) return { session: null, concepts: [], checks: [], lessons: [] };
+
+  const [concepts, checks, lessons] = await Promise.all([
+    conceptsByIds(session.conceptIds, graphId),
+    getChecks(id, graphId),
+    getLessons(id, graphId),
+  ]);
+  const rank = new Map(session.conceptIds.map((cid, i) => [cid, i]));
+  concepts.sort(
+    (a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0),
+  );
+  return { session, concepts: decorate(session, concepts), checks, lessons };
+}
+
+/** All Sessions newest-first with Path progress — the sidebar's data. */
 export async function listSessions(
   graphId: string = DEMO_USER_ID,
-): Promise<import("./types").SessionSummary[]> {
+): Promise<SessionSummary[]> {
   const graph = graphRef(graphId);
   const [sessionSnap, conceptSnap] = await Promise.all([
     graph.collection("sessions").orderBy("createdAt", "desc").get(),
     graph.collection("concepts").get(),
   ]);
-  const bySession = new Map<string, Concept[]>();
-  for (const doc of conceptSnap.docs) {
-    const concept = doc.data() as Concept;
-    const list = bySession.get(concept.sessionId);
-    if (list) list.push(concept);
-    else bySession.set(concept.sessionId, [concept]);
-  }
+  const unlocked = new Set(
+    conceptSnap.docs
+      .map((d) => d.data() as Concept)
+      .filter((c) => c.unlocked)
+      .map((c) => c.id),
+  );
   return sessionSnap.docs.map((doc) => {
     const session = doc.data() as Session;
-    const concepts = bySession.get(session.id) ?? [];
-    const onPath = concepts.filter(
-      (c) => c.order !== null || c.status === "active",
-    );
     return {
       id: session.id,
       topic: session.topic,
       phase: session.phase,
       createdAt: session.createdAt,
-      pathLength: onPath.length,
-      pathDone: onPath.filter((c) => c.status === "unlocked").length,
-      unlockedCount: concepts.filter((c) => c.status === "unlocked").length,
+      pathLength: session.path.length,
+      pathDone: session.path.filter((e) => unlocked.has(e.conceptId)).length,
+      unlockedCount: session.conceptIds.filter((id) => unlocked.has(id)).length,
     };
   });
-}
-
-/**
- * One Session's full record — what the read-only archive view renders.
- * Null when the Session doesn't exist.
- */
-export async function getSessionRecord(
-  sessionId: string,
-  graphId: string = DEMO_USER_ID,
-): Promise<{
-  session: Session;
-  concepts: Concept[];
-  checks: Check[];
-  lessons: Lesson[];
-} | null> {
-  const doc = await graphRef(graphId)
-    .collection("sessions")
-    .doc(sessionId)
-    .get();
-  if (!doc.exists) return null;
-  const session = doc.data() as Session;
-  const conceptDocs = await graphRef(graphId)
-    .collection("concepts")
-    .where("sessionId", "==", sessionId)
-    .get();
-  const concepts = conceptDocs.docs
-    .map((d) => d.data() as Concept)
-    .sort((a, b) => a.id.localeCompare(b.id));
-  const [checks, lessons] = await Promise.all([
-    getChecks(sessionId, graphId),
-    getLessons(sessionId, graphId),
-  ]);
-  return { session, concepts, checks, lessons };
 }
 
 /**
@@ -596,41 +702,62 @@ export async function getSessionRecord(
  * render. Small by construction (one user's accumulated learning).
  */
 export async function getGraphOverview(graphId: string = DEMO_USER_ID): Promise<{
-  concepts: Concept[];
+  concepts: SessionConcept[];
   sessions: Session[];
   checks: Check[];
   edits: Edit[];
   lessons: Lesson[];
 }> {
   const graph = graphRef(graphId);
-  const [concepts, sessions, checks, edits, lessons] = await Promise.all([
-    graph.collection("concepts").get(),
-    graph.collection("sessions").orderBy("createdAt", "desc").get(),
-    graph.collection("checks").get(),
-    graph.collection("edits").orderBy("createdAt", "desc").limit(50).get(),
-    graph.collection("lessons").get(),
-  ]);
+  const [conceptSnap, sessionSnap, checkSnap, editSnap, lessonSnap] =
+    await Promise.all([
+      graph.collection("concepts").get(),
+      graph.collection("sessions").orderBy("createdAt", "desc").get(),
+      graph.collection("checks").get(),
+      graph.collection("edits").orderBy("createdAt", "desc").limit(50).get(),
+      graph.collection("lessons").get(),
+    ]);
+
+  const sessions = sessionSnap.docs.map((d) => d.data() as Session);
+  const active = new Set(
+    sessions
+      .filter((s) => s.phase !== "complete" && s.activeConceptId)
+      .map((s) => s.activeConceptId as string),
+  );
+  // Origin is a Path fact, so across the Graph a Concept counts as remedial
+  // if any Session spliced it in.
+  const remedial = new Set(
+    sessions.flatMap((s) =>
+      s.path.filter((e) => e.origin === "remedial").map((e) => e.conceptId),
+    ),
+  );
+  // Across the whole Graph there is no single Path, so order is null and
+  // status is the Graph's own view: learned, being learned somewhere, or
+  // not yet reached.
+  const concepts: SessionConcept[] = conceptSnap.docs
+    .map((d) => d.data() as Concept)
+    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+    .map((c) => ({
+      ...c,
+      order: null,
+      origin: remedial.has(c.id) ? ("remedial" as const) : ("planned" as const),
+      status: c.unlocked ? "unlocked" : active.has(c.id) ? "active" : "locked",
+    }));
+
   return {
-    concepts: concepts.docs
-      .map((d) => d.data() as Concept)
-      .sort(
-        (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
-      ),
-    sessions: sessions.docs.map((d) => d.data() as Session),
-    checks: checks.docs.map((d) => d.data() as Check),
-    edits: edits.docs.map((d) => d.data() as Edit),
-    lessons: lessons.docs.map((d) => d.data() as Lesson),
+    concepts,
+    sessions,
+    checks: checkSnap.docs.map((d) => d.data() as Check),
+    edits: editSnap.docs.map((d) => d.data() as Edit),
+    lessons: lessonSnap.docs.map((d) => d.data() as Lesson),
   };
 }
 
-/** One Concept by id, from anywhere in the Graph. */
-export async function getConcept(
-  conceptId: string,
+/** One Session's full record — what the read-only archive view renders. */
+export async function getSessionRecord(
+  sessionId: string,
   graphId: string = DEMO_USER_ID,
-): Promise<Concept | null> {
-  const doc = await graphRef(graphId)
-    .collection("concepts")
-    .doc(conceptId)
-    .get();
-  return doc.exists ? (doc.data() as Concept) : null;
+): Promise<SessionState | null> {
+  const state = await getSessionState(sessionId, graphId);
+  return state.session ? state : null;
 }

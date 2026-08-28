@@ -7,28 +7,37 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import LessonFlow from "@/components/session/LessonFlow";
 import PathRail from "@/components/session/PathRail";
-import type { Check, Concept, Lesson, Session } from "@/lib/types";
+import type { Check, Lesson, Session, SessionConcept } from "@/lib/types";
 import { roman, timeAgo } from "@/lib/ui";
 
 type Record_ = {
   session: Session;
-  concepts: Concept[];
+  concepts: SessionConcept[];
   checks: Check[];
   lessons: Lesson[];
 };
 
-export default function ArchiveView({ id }: { id: string }) {
-  const [record, setRecord] = useState<Record_ | null>(null);
+export default function ArchiveView({
+  id,
+  record: given,
+}: {
+  id: string;
+  /** Already fetched by the route; skips a second round trip. */
+  record?: Record_;
+}) {
+  const [fetched, setFetched] = useState<Record_ | null>(null);
   const [missing, setMissing] = useState(false);
+  const record = given ?? fetched;
   const [openId, setOpenId] = useState<string | null>(null);
   const [railOpen, setRailOpen] = useState(false);
 
   useEffect(() => {
+    if (given) return;
     fetch(`/api/sessions/${id}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then(setRecord)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("gone"))))
+      .then(setFetched)
       .catch(() => setMissing(true));
-  }, [id]);
+  }, [id, given]);
 
   if (missing) {
     return (
@@ -47,7 +56,6 @@ export default function ArchiveView({ id }: { id: string }) {
   if (!record) return <div className="work" />;
 
   const { session, concepts, lessons } = record;
-  const complete = session.phase === "complete";
   const path = concepts
     .filter((c) => c.order !== null || c.status === "active")
     .sort((a, b) => (a.order ?? -1) - (b.order ?? -1));
@@ -66,22 +74,11 @@ export default function ArchiveView({ id }: { id: string }) {
         <section className="column">
           <div className="flow fade-in">
             <span className="kicker sc">
-              {complete ? "Session record" : "Paused session"} ·{" "}
-              {timeAgo(session.createdAt)}
+              Session record · {timeAgo(session.createdAt)}
             </span>
             <h1 className="h-display">{session.topic}</h1>
 
-            {!complete && (
-              <div className="notice" style={{ marginTop: 24 }}>
-                <span>
-                  This session is paused. Resuming past sessions arrives with
-                  the concurrency update — for now, only the newest session is
-                  live.
-                </span>
-              </div>
-            )}
-
-            {complete && session.recap && (
+            {session.recap && (
               <div className="recap" style={{ marginTop: 22 }}>
                 <p>{session.recap}</p>
               </div>

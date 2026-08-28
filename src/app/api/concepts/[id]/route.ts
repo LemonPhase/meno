@@ -1,12 +1,17 @@
-import { advanceToNextConcept } from "@/lib/progression";
 import {
   deleteConcept,
-  getConcept,
-  getCurrentState,
+  getGraphOverview,
+  getSessionState,
   renameConcept,
+  sessionsLearning,
 } from "@/lib/store";
 
 type Context = { params: Promise<{ id: string }> };
+
+async function conceptById(id: string) {
+  const graph = await getGraphOverview();
+  return graph.concepts.find((c) => c.id === id) ?? null;
+}
 
 /** Rename a Concept (any status); recorded append-only as an Edit. */
 export async function PATCH(request: Request, { params }: Context) {
@@ -21,36 +26,37 @@ export async function PATCH(request: Request, { params }: Context) {
   }
 
   const { id } = await params;
-  const state = await getCurrentState();
-  const concept =
-    state.concepts.find((c) => c.id === id) ?? (await getConcept(id));
+  const concept = await conceptById(id);
   if (!concept) {
     return Response.json({ error: "no such Concept" }, { status: 404 });
   }
 
   await renameConcept(concept, label.trim());
-  return Response.json(await getCurrentState());
+  return Response.json(await getSessionState());
 }
 
 /**
- * Delete a Concept (ADR-0003: never blocks, never cascades). Deleting the
- * Active Concept hands off to the next Locked one (or completes the Path).
+ * Delete a Concept (ADR-0003: never cascades). Refused while it is being
+ * learned: a Session mid-Lesson on a Concept that vanished has no honest
+ * state to be in — finish or skip it there first.
  */
 export async function DELETE(_request: Request, { params }: Context) {
   const { id } = await params;
-  const state = await getCurrentState();
-  const concept =
-    state.concepts.find((c) => c.id === id) ?? (await getConcept(id));
-  if (!concept || !state.session) {
+  const concept = await conceptById(id);
+  if (!concept) {
     return Response.json({ error: "no such Concept" }, { status: 404 });
   }
 
-  const { wasActive } = await deleteConcept(state.session, concept);
-
-  if (wasActive && state.session.phase === "learning") {
-    const refreshed = await getCurrentState();
-    await advanceToNextConcept(refreshed.session!, refreshed.concepts);
+  const learning = await sessionsLearning(id);
+  if (learning.length > 0) {
+    return Response.json(
+      {
+        error: `“${concept.label}” is being learned in “${learning[0].topic}” — finish or skip it there first`,
+      },
+      { status: 409 },
+    );
   }
 
-  return Response.json(await getCurrentState());
+  await deleteConcept(concept);
+  return Response.json(await getSessionState());
 }

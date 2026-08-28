@@ -9,32 +9,41 @@ import { useEffect, useState } from "react";
 import LessonFlow, { EventLine } from "@/components/session/LessonFlow";
 import PathRail from "@/components/session/PathRail";
 import TopicEntry from "@/components/session/TopicEntry";
-import type { Check, Concept, Lesson, Session } from "@/lib/types";
+import type { Check, Lesson, Session, SessionConcept } from "@/lib/types";
 import { announceSessionsChanged, roman } from "@/lib/ui";
 
 type State = {
   session: Session | null;
-  concepts: Concept[];
+  concepts: SessionConcept[];
   checks: Check[];
   lessons: Lesson[];
 };
 
 const EMPTY: State = { session: null, concepts: [], checks: [], lessons: [] };
 
+const sessionUrl = (id?: string) =>
+  id ? `/api/session?session=${encodeURIComponent(id)}` : "/api/session";
+
 const THINKING: Record<string, string> = {
   chat: "Meno is thinking",
   answer: "Reading your answer",
   check: "Writing a check",
   advance: "Preparing the first lesson",
+  breakdown: "Finding what is missing",
 };
 
-function pathOf(concepts: Concept[]): Concept[] {
+function pathOf(concepts: SessionConcept[]): SessionConcept[] {
   return concepts
     .filter((c) => c.order !== null || c.status === "active")
     .sort((a, b) => (a.order ?? -1) - (b.order ?? -1));
 }
 
-export default function SessionWorkspace() {
+export default function SessionWorkspace({
+  sessionId,
+}: {
+  /** Which Session to work in; omitted, the one the app opens on. */
+  sessionId?: string;
+}) {
   const [state, setState] = useState<State>(EMPTY);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -48,7 +57,7 @@ export default function SessionWorkspace() {
   const [watermark, setWatermark] = useState(Number.POSITIVE_INFINITY);
 
   useEffect(() => {
-    fetch("/api/session")
+    fetch(sessionUrl(sessionId))
       .then((r) => r.json())
       .then((s: State) => {
         setState(s);
@@ -68,7 +77,7 @@ export default function SessionWorkspace() {
         }
       })
       .catch(() => setReady(true));
-  }, []);
+  }, [sessionId]);
 
   // No interval polling: every change to a Session — including the agent's
   // own Adjustments — happens inside a request this client made, and that
@@ -83,7 +92,7 @@ export default function SessionWorkspace() {
     async function refresh() {
       if (document.visibilityState !== "visible") return;
       try {
-        const res = await fetch("/api/session");
+        const res = await fetch(sessionUrl(sessionId));
         if (!res.ok) return;
         const next = await res.json();
         if (!cancelled) setState(next);
@@ -98,13 +107,16 @@ export default function SessionWorkspace() {
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [phase, busy]);
+  }, [phase, busy, sessionId]);
 
   // A new Active Concept starts at the top of the sheet.
   const activeId = state.session?.activeConceptId;
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, [activeId, phase]);
+
+  // Sessions run concurrently, so every call says which one it is about.
+  const target = sessionId ?? state.session?.id;
 
   async function call(
     label: string,
@@ -114,13 +126,20 @@ export default function SessionWorkspace() {
   ): Promise<void> {
     setBusy(label);
     setError(null);
+    const payload =
+      method === "POST" ? { sessionId: target, ...(body ?? {}) } : body;
     try {
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      if (!res.ok) {
+        // An error body isn't always JSON (a crashed route returns HTML),
+        // so fall back to the status rather than throwing over the throw.
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.error ?? `${res.status} ${res.statusText}`);
+      }
       setState(await res.json());
       announceSessionsChanged();
     } catch (e) {
@@ -424,8 +443,8 @@ function Learning({
   onDismissResume,
 }: {
   state: State;
-  active: Concept;
-  path: Concept[];
+  active: SessionConcept;
+  path: SessionConcept[];
   folio: number;
   busy: string | null;
   call: (label: string, url: string, body?: unknown) => Promise<void>;
@@ -461,23 +480,6 @@ function Learning({
         kind="mark"
       />
     ) : undefined;
-
-  // A failed Check that queued a detour renders the splice as an event.
-  const lastFeedback = lesson?.messages.filter((m) => m.kind === "check-feedback").at(-1);
-  const failed =
-    lastFeedback?.checkId !== undefined &&
-    state.checks.find((c) => c.id === lastFeedback.checkId)?.verdict === "fail";
-  const queuedDetour = failed
-    ? state.concepts.find(
-        (c) =>
-          c.origin === "remedial" &&
-          c.status === "locked" &&
-          c.order === (active.order ?? -1) + 1,
-      )
-    : undefined;
-  const after = queuedDetour ? (
-    <EventLine text={`Detour queued · ${queuedDetour.label}`} kind="detour" />
-  ) : undefined;
 
   async function send() {
     const text = input.trim();
@@ -522,7 +524,6 @@ function Learning({
           animateAfter={animateAfter}
           busy={busy ? (THINKING[busy] ?? null) : null}
           before={before}
-          after={after}
         />
       </div>
 
@@ -557,14 +558,24 @@ function Learning({
               {pendingCheck ? "Answer" : "Send"}
             </button>
             {!pendingCheck && (
-              <button
-                className="btn-box sc"
-                disabled={!!busy}
-                title="Skip the teaching, not the verification: ask for the mastery check whenever you feel ready — pass it and the concept unlocks. You can attempt it as many times as you like."
-                onClick={() => call("check", "/api/session/check")}
-              >
-                Test me
-              </button>
+              <>
+                <button
+                  className="btn-box sc"
+                  disabled={!!busy}
+                  title="Too easy? Skip the teaching, not the verification: ask for the mastery check whenever you feel ready — pass it and the concept unlocks. You can attempt it as many times as you like."
+                  onClick={() => call("check", "/api/session/check")}
+                >
+                  Test me
+                </button>
+                <button
+                  className="btn-box sc"
+                  disabled={!!busy}
+                  title="Too hard? Meno finds the prerequisite you are missing and teaches that first, as a short detour before this concept. The concept itself stays as it is."
+                  onClick={() => call("breakdown", "/api/session/breakdown")}
+                >
+                  Break it down
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -572,7 +583,7 @@ function Learning({
           <span>
             {pendingCheck
               ? "Answer in your own words — you can attempt this as many times as you like."
-              : "Ask as much as you want. Feeling ahead of it? Test me jumps straight to the check."}
+              : "Ask as much as you want. Too easy? Test me. Too hard? Break it down."}
           </span>
           <span>
             <kbd>↵</kbd> send · <kbd>⇧↵</kbd> new line

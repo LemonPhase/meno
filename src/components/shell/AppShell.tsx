@@ -57,16 +57,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("meno:sessions", refresh);
   }, [refresh]);
 
-  // The newest Session is the live workspace at "/"; older ones are
-  // read-only records at /sessions/[id]. (Stage 1: one live Session.)
-  const liveId = sessions[0]?.id ?? null;
-  const hrefFor = (s: SessionSummary) =>
-    s.id === liveId ? "/" : `/sessions/${s.id}`;
-  const isActive = (s: SessionSummary) =>
-    s.id === liveId ? pathname === "/" : pathname === `/sessions/${s.id}`;
-
   const inProgress = sessions.filter((s) => s.phase !== "complete");
   const completed = sessions.filter((s) => s.phase === "complete");
+
+  // Every Session has its own address; "/" is whichever one the app opens
+  // on — the most recent still in progress, else the most recent of all.
+  const landing = (inProgress[0] ?? sessions[0])?.id ?? null;
+  const hrefFor = (s: SessionSummary) => `/sessions/${s.id}`;
+  const isActive = (s: SessionSummary) =>
+    pathname === `/sessions/${s.id}` ||
+    (pathname === "/" && s.id === landing);
 
   const shellClass = `shell${closed ? " closed" : ""}${mobileOpen ? " open-mobile" : ""}`;
 

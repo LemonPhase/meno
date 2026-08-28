@@ -1,5 +1,6 @@
 import { gradeDiagnostic } from "@/ai/diagnose";
-import { applyDiagnosis, getCurrentState } from "@/lib/store";
+import { sessionIdFrom } from "@/lib/api";
+import { applyDiagnosis, getSessionState } from "@/lib/store";
 
 /**
  * Submit all diagnostic answers at once. Grades them in one call, unlocks
@@ -7,12 +8,13 @@ import { applyDiagnosis, getCurrentState } from "@/lib/store";
  * the Path, and lands the Session in Previewing.
  */
 export async function POST(request: Request) {
-  let answers: unknown;
+  let body: Record<string, unknown>;
   try {
-    ({ answers } = await request.json());
+    body = await request.json();
   } catch {
     return Response.json({ error: "invalid JSON body" }, { status: 400 });
   }
+  const { answers } = body;
   if (
     !Array.isArray(answers) ||
     answers.some(
@@ -25,7 +27,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const state = await getCurrentState();
+  const state = await getSessionState(sessionIdFrom(request, body));
   if (!state.session || state.session.phase !== "diagnosing") {
     return Response.json(
       { error: "no Session in the Diagnosing phase" },
@@ -37,20 +39,24 @@ export async function POST(request: Request) {
   const graded = (answers as { checkId: string; answer: string }[]).filter(
     (a) => checkById.has(a.checkId),
   );
+  const toProbe = state.concepts.filter((c) => !c.unlocked);
 
-  const { knownConceptIds } = await gradeDiagnostic({
-    topic: state.session.topic,
-    concepts: state.concepts.map(({ id, label, summary }) => ({
-      id,
-      label,
-      summary,
-    })),
-    answers: graded.map((a) => ({
-      question: checkById.get(a.checkId)!.question,
-      answer: a.answer,
-    })),
-  });
+  const { knownConceptIds } =
+    graded.length > 0 && toProbe.length > 0
+      ? await gradeDiagnostic({
+          topic: state.session.topic,
+          concepts: toProbe.map(({ id, label, summary }) => ({
+            id,
+            label,
+            summary,
+          })),
+          answers: graded.map((a) => ({
+            question: checkById.get(a.checkId)!.question,
+            answer: a.answer,
+          })),
+        })
+      : { knownConceptIds: [] };
 
   await applyDiagnosis(state.session, knownConceptIds, graded);
-  return Response.json(await getCurrentState());
+  return Response.json(await getSessionState(state.session.id));
 }

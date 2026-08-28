@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { computeLayout } from "@/lib/dag-layout";
-import type { Check, Concept, Session } from "@/lib/types";
+import type { Check, Session, SessionConcept } from "@/lib/types";
 import { readPref, roman, writePref } from "@/lib/ui";
 
 const MAP_PREF = "meno-rail-map";
@@ -23,7 +23,7 @@ const MINI = {
   maxHeight: 430,
 };
 
-function Minimap({ concepts }: { concepts: Concept[] }) {
+function Minimap({ concepts }: { concepts: SessionConcept[] }) {
   const [sel, setSel] = useState<string | null>(null);
   const { placements, height } = computeLayout(concepts, MINI);
   const byId = new Map(concepts.map((c) => [c.id, c]));
@@ -129,7 +129,7 @@ export default function PathRail({
   insertedAfter,
 }: {
   session: Session;
-  concepts: Concept[];
+  concepts: SessionConcept[];
   checks: Check[];
   mode: "learning" | "complete";
   open: boolean;

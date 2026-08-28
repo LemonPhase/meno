@@ -1,9 +1,10 @@
 import { gradeMasteryCheck } from "@/ai/lesson";
+import { sessionIdFrom } from "@/lib/api";
 import { advanceToNextConcept } from "@/lib/progression";
 import {
   appendLessonMessages,
   formatEditContext,
-  getCurrentState,
+  getSessionState,
   getRecentEdits,
   lessonMessage,
   nextLockedConcept,
@@ -15,21 +16,22 @@ import {
 
 /**
  * Answer the pending mastery Check. A fail returns to open conversation;
- * a pass Unlocks the Concept and moves the Session forward (next Concept,
- * or Complete + Recap).
+ * a pass Unlocks the Concept — across the Graph, so every other Session's
+ * Path sees it as already known — and moves this Session forward.
  */
 export async function POST(request: Request) {
-  let answer: unknown;
+  let body: Record<string, unknown>;
   try {
-    ({ answer } = await request.json());
+    body = await request.json();
   } catch {
     return Response.json({ error: "invalid JSON body" }, { status: 400 });
   }
+  const { answer } = body;
   if (typeof answer !== "string" || answer.trim() === "") {
     return Response.json({ error: "answer is required" }, { status: 400 });
   }
 
-  const state = await getCurrentState();
+  const state = await getSessionState(sessionIdFrom(request, body));
   const { session } = state;
   if (!session || session.phase !== "learning" || !session.activeConceptId) {
     return Response.json(
@@ -56,11 +58,14 @@ export async function POST(request: Request) {
     (l) => l.conceptId === session.activeConceptId,
   )!;
 
-  const next = nextLockedConcept(state.concepts);
+  const next = nextLockedConcept(session, state.concepts);
   const grade = await gradeMasteryCheck({
     topic: session.topic,
     concept: { label: concept.label, summary: concept.summary },
-    nextConcept: next ? { label: next.label, summary: next.summary } : null,
+    nextConcept:
+      next && next.id !== concept.id
+        ? { label: next.label, summary: next.summary }
+        : null,
     lesson: { messages: lesson.messages },
     question: check.question,
     answer: answer.trim(),
@@ -68,28 +73,37 @@ export async function POST(request: Request) {
   });
 
   await recordCheckResult(check.id, answer.trim(), grade.verdict);
-  await appendLessonMessages(concept.id, [
+  await appendLessonMessages(session.id, concept.id, [
     lessonMessage("check-answer", answer.trim(), check.id),
     lessonMessage("check-feedback", grade.feedback, check.id),
   ]);
 
-  // ADR-0001: the bounded Adjustment rides on the grading result.
+  // ADR-0001: the bounded Adjustment rides on the grading result, and is
+  // recorded in the Lesson so the transcript explains itself later.
   if (grade.adjustment === "insert_remedial" && grade.remedial) {
-    await spliceRemedialConcept(
+    const remedial = await spliceRemedialConcept(
       session,
       concept,
       state.concepts,
       grade.remedial,
     );
+    await appendLessonMessages(session.id, concept.id, [
+      lessonMessage("event", `Detour queued · ${remedial.label}`),
+    ]);
   } else if (grade.adjustment === "skip_next") {
-    await skipNextConcept(state.concepts);
+    const skipped = await skipNextConcept(session, state.concepts);
+    if (skipped) {
+      await appendLessonMessages(session.id, concept.id, [
+        lessonMessage("event", `${skipped.label} marked known · skipped`),
+      ]);
+    }
   }
 
   if (grade.verdict === "pass") {
     await unlockConcept(concept.id);
-    const refreshed = await getCurrentState();
+    const refreshed = await getSessionState(session.id);
     await advanceToNextConcept(refreshed.session!, refreshed.concepts);
   }
 
-  return Response.json(await getCurrentState());
+  return Response.json(await getSessionState(session.id));
 }

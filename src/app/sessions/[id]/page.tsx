@@ -1,10 +1,10 @@
-import ArchiveView from "@/components/session/ArchiveView";
+import SessionRoute from "@/components/session/SessionRoute";
 
-export default async function SessionRecordPage({
+export default async function SessionPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return <ArchiveView id={id} />;
+  return <SessionRoute id={id} />;
 }

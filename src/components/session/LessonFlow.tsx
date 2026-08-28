@@ -54,6 +54,8 @@ function Msg({
         </div>
       );
     }
+    case "event":
+      return <EventLine text={message.text} kind={eventKind(message.text)} animate={animate} />;
     case "check-feedback": {
       const verdict = message.checkId
         ? checkById.get(message.checkId)?.verdict
@@ -73,6 +75,13 @@ function Msg({
     default:
       return null;
   }
+}
+
+/** Detours read in the rubric voice; anything unlocked reads as attained. */
+function eventKind(text: string): "plain" | "mark" | "detour" {
+  if (/detour/i.test(text)) return "detour";
+  if (/unlocked|skipped|known/i.test(text)) return "mark";
+  return "plain";
 }
 
 export function EventLine({

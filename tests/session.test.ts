@@ -41,13 +41,25 @@ describe("POST /api/session", () => {
     expect(softmax.requires).toEqual([dotProduct.id]);
     expect(dotProduct.requires).toEqual([]);
 
-    // Freshly investigated Concepts start Locked, planned, off the Path.
+    // ADR-0004: the durable Concept carries no Path state at all — only
+    // whether it is learned, and which Session first found it.
     for (const c of [attention, softmax, dotProduct]) {
-      expect(c.status).toBe("locked");
+      expect(c.unlocked).toBe(false);
       expect(c.skipped).toBe(false);
-      expect(c.origin).toBe("planned");
+      expect(c.originSessionId).toBe(body.session.id);
+      expect(c).not.toHaveProperty("status");
+      expect(c).not.toHaveProperty("order");
+    }
+
+    // The Session claims them, but has no Path until the diagnostic runs.
+    expect(body.session.conceptIds.sort()).toEqual(
+      [attention.id, softmax.id, dotProduct.id].sort(),
+    );
+    expect(body.session.path).toEqual([]);
+    for (const c of body.concepts) {
+      expect(c.status).toBe("locked");
       expect(c.order).toBeNull();
-      expect(c.sessionId).toBe(body.session.id);
+      expect(c.origin).toBe("planned");
     }
   });
 

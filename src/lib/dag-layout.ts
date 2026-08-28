@@ -2,10 +2,10 @@
 // destination and the session minimap. Each Concept sits on a layer given
 // by its `requires` depth; layers flow top-to-bottom.
 
-import type { Concept } from "./types";
+import type { SessionConcept } from "./types";
 
 export type NodePlacement = {
-  concept: Concept;
+  concept: SessionConcept;
   x: number;
   y: number;
   width: number;
@@ -35,7 +35,7 @@ const MIN_LAYER_GAP = 42;
  * prerequisites in the set, otherwise 1 + the deepest prerequisite.
  * Memoized DFS with a visiting guard so a malformed cycle cannot hang.
  */
-export function computeDepths(concepts: Concept[]): Map<string, number> {
+export function computeDepths(concepts: SessionConcept[]): Map<string, number> {
   const byId = new Map(concepts.map((c) => [c.id, c]));
   const depths = new Map<string, number>();
   const visiting = new Set<string>();
@@ -68,11 +68,11 @@ function truncateLabel(label: string, max: number): string {
 }
 
 export function computeLayout(
-  concepts: Concept[],
+  concepts: SessionConcept[],
   opts: LayoutOptions,
 ): { placements: Map<string, NodePlacement>; height: number } {
   const depths = computeDepths(concepts);
-  const layers: Concept[][] = [];
+  const layers: SessionConcept[][] = [];
   for (const concept of concepts) {
     const depth = depths.get(concept.id) ?? 0;
     (layers[depth] ??= []).push(concept);
@@ -84,7 +84,7 @@ export function computeLayout(
       (a, b) =>
         (a.order ?? Number.MAX_SAFE_INTEGER) -
           (b.order ?? Number.MAX_SAFE_INTEGER) ||
-        a.extractionIndex - b.extractionIndex ||
+        a.createdAt - b.createdAt ||
         a.id.localeCompare(b.id),
     );
   }

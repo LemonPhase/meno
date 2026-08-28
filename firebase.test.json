@@ -1,0 +1,6 @@
+{
+  "emulators": {
+    "firestore": { "port": 8793 },
+    "ui": { "enabled": false }
+  }
+}

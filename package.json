@@ -9,7 +9,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "bash scripts/test.sh run",
-    "test:watch": "bash scripts/test.sh watch"
+    "test:watch": "bash scripts/test.sh watch",
+    "migrate": "node scripts/migrate-adr-0004.mjs",
+    "seed": "node scripts/seed-dev.mjs"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.41.0",
@@ -17,9 +19,14 @@
     "firebase": "^12.18.0",
     "firebase-admin": "^14.3.0",
     "genkit": "^1.41.0",
+    "katex": "^0.16.47",
     "next": "16.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

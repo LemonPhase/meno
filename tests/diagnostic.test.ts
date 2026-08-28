@@ -3,7 +3,7 @@ import { clearScriptedResponses, scriptModelResponse } from "@/ai/scripted";
 import { POST as postDiagnostic } from "@/app/api/session/diagnostic/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
-import type { Concept } from "@/lib/types";
+import type { SessionConcept } from "@/lib/types";
 import {
   jsonRequest,
   startInvestigatedSession,
@@ -19,7 +19,7 @@ function answersFor(state: StateBody) {
   return state.checks.map((c) => ({ checkId: c.id, answer: "my answer" }));
 }
 
-function byLabel(state: StateBody, label: string): Concept {
+function byLabel(state: StateBody, label: string): SessionConcept {
   const c = state.concepts.find((c) => c.label === label);
   if (!c) throw new Error(`no concept labeled ${label}`);
   return c;

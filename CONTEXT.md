@@ -16,20 +16,24 @@ _Avoid_: content.
 UI-layer word only, for a Concept's rendered position on the graph canvas. Never used as a domain/backend term — say Concept there.
 
 **Graph**:
-The single, durable, long-lived collection of Concepts owned by one user. One Graph per user; many Sessions contribute Concepts to it over time.
+The single, durable, long-lived collection of Concepts owned by one user — the record of what the user knows, and equally what the agent knows about the user. One Graph per user; many Sessions contribute Concepts to it over time, and later Sessions' investigations consult it (see Attach).
 
 **Session**:
-One run of the app, from entering a Topic through completing (or abandoning) its Path. Contributes Concepts to the user's Graph; each Concept records which Session originated it.
+One run of learning a Topic, from entering it through completing (or abandoning) its Path. Sessions behave like conversations: many may be in progress at once, and any of them can be reopened and resumed where it left off. A completed Session stays readable — its Recap, tally, and Lessons in Path order. Each Concept records which Session originated it.
 
 **Path**:
-Not a persisted entity — the ordering of a Session's Concepts (each Concept carries its order within the Session). A linearization of the Concepts' `requires` structure, containing only Concepts still to learn — Concepts the diagnostic showed the user already knows go straight into the Graph as Unlocked, never onto the Path. Has no meaning independent of its Concepts, and nothing remains of it once the Session ends beyond those Concepts sitting in the Graph.
+A Session's ordering of the Concepts it still has to teach — a linearization of their `requires` structure, containing only Concepts not yet Unlocked. Path membership, order, and Locked/Active state are facts of the Session, not the Concept: the same un-Unlocked Concept may sit on several Sessions' Paths, and when one Session Unlocks it, it leaves the others' Paths as already known. Nothing of a Path outlives its Session beyond the Concepts sitting in the Graph.
+
+**Attach**:
+During investigation, matching a found concept to an existing Concept in the user's Graph instead of creating a duplicate. An attached Concept that is already Unlocked goes straight to "already yours" — excluded from the diagnostic, never on the Path.
+_Avoid_: dedup, merge.
 
 **Check**:
-A question and its graded answer. One mechanism, used in two phases: `diagnostic` (before a Path exists, assessing prerequisite/Topic understanding) and `mastery` (per-Concept, gates it from Active to Unlocked).
+A question and its graded answer. One mechanism, used in two phases: `diagnostic` (before a Path exists, assessing prerequisite/Topic understanding) and `mastery` (per-Concept, gates it to Unlocked). "Test me" — the user asking for the mastery Check whenever they feel ready, including immediately if the Concept looks too easy — is the only route to Unlocked; there is no self-declared skip.
 _Avoid_: quiz, diagnostic question — both are Checks, not separate types.
 
 **Concept status** (Locked / Active / Unlocked):
-Locked: not yet reached. Active: open for teaching and free-form conversation; the user requests a mastery Check whenever they feel ready, and may attempt it any number of times. Unlocked: a mastery Check has been passed — i.e., learned. A Skipped Concept is also Unlocked (see Skipped).
+Unlocked is a fact of the Graph — durable, meaning learned. Locked and Active are facts of one Session's Path: Locked = not yet reached in that Session; Active = open for teaching and free-form conversation there, with exactly one Active Concept per Session. A Concept can be Locked in one Session and Active in another — but once Unlocked, it is Unlocked everywhere.
 
 **Lesson**:
 The record of everything that happens while one Concept is Active: its teaching exposition, any free-form Q&A, and every mastery Check attempt. What a Concept links back to when the user wants to review how they learned it.
@@ -44,15 +48,18 @@ Whether a Concept was part of the upfront Path preview (planned) or inserted mid
 The prerequisite relationship between Concepts, pointing from a Concept to the Concepts it requires (e.g. Attention requires Softmax). Produced by investigating the Topic (a small DAG), then linearized into the Path. Deleting a Concept removes it from any dependents' `requires` — no cascade, no block.
 
 **Edit**:
-A recorded, user-made change to a Concept in their Graph (rename or delete), allowed on a Concept of any status — deleting a Locked Concept prunes it from the Path. Stored append-only and surfaced to the agent as context for future Graph updates.
+A recorded, user-made change to a Concept in their Graph (rename or delete). Deleting prunes the Concept from every Session's Path — but a Concept currently Active in any in-progress Session cannot be deleted. During a Lesson the Session view offers no direct Concept editing; the user's levers there are Test me and Break it down. Stored append-only and surfaced to the agent as context for future Graph updates.
 _Avoid_: audit log entry, revision.
 
 **Adjustment**:
-A bounded change the agent makes to a Session's Path after a mastery Check: inserting a remedial Concept, or marking the next Concept Unlocked via skip. Deliberately not a full replan of the remaining Path.
+A bounded change the agent makes to a Session's Path: inserting a remedial Concept, or marking the next Concept Unlocked via skip. Triggered by grading a mastery Check, or explicitly by the user via Break it down. Deliberately not a full replan of the remaining Path.
 _Avoid_: replan (implies unbounded regeneration, which this isn't).
 
+**Break it down**:
+The user's signal, during a Lesson, that the Active Concept is too hard. Always answered with an insert-remedial Adjustment — the Concept itself is never restructured, because too hard means a prerequisite is missing: every Concept should sit on the leaf of the user's current knowledge. (The too-easy counterpart is simply Test me.)
+
 **Session phase** (Investigating / Diagnosing / Previewing / Learning / Complete):
-Investigating: researching the Topic. Diagnosing: running diagnostic Checks. Previewing: skeleton Path shown to the user. Learning: stepping through Concepts. Complete: Path finished, closed by a Recap. During Learning, exactly one Concept is Active at any time — that Concept is the Session's current position. A Session survives interruption: reloading the app resumes it in the same phase, at the same position.
+Investigating: researching the Topic. Diagnosing: running diagnostic Checks. Previewing: skeleton Path shown to the user. Learning: stepping through Concepts. Complete: Path finished, closed by a Recap. During Learning, exactly one Concept is Active at any time — that Concept is the Session's current position. Any Session can be reopened at any time and resumes in the same phase, at the same position.
 
 **Recap**:
 The agent's closing summary when a Session completes: congratulates the user and recounts what was unlocked, including any remedial detours or skips along the way.

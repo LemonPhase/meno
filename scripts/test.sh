@@ -15,4 +15,9 @@ if ! command -v java >/dev/null || [ "$(java_major java)" -lt 21 ]; then
   done
 fi
 
-exec npx firebase emulators:exec --only firestore --project meno-test "npx vitest ${1:-run}"
+# Its own port (firebase.test.json), so a dogfooding emulator on the
+# default 8792 can keep running while the suite does. The two are already
+# namespaced apart — tests are project meno-test, dogfooding is your own —
+# so the only thing that ever collided was the port.
+exec npx firebase emulators:exec --only firestore --project meno-test \
+  --config firebase.test.json "npx vitest ${1:-run}"

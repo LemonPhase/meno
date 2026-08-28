@@ -2,11 +2,11 @@ import { promptText, scriptModelResponse } from "@/ai/scripted";
 import { POST as postSessionRoute } from "@/app/api/session/route";
 import { POST as postDiagnosticRoute } from "@/app/api/session/diagnostic/route";
 import { POST as postAdvanceRoute } from "@/app/api/session/advance/route";
-import type { Check, Concept, Lesson, Session } from "@/lib/types";
+import type { Check, Lesson, Session, SessionConcept } from "@/lib/types";
 
 export type StateBody = {
   session: Session;
-  concepts: Concept[];
+  concepts: SessionConcept[];
   checks: Check[];
   lessons: Lesson[];
 };
@@ -94,4 +94,49 @@ export async function reachLearning(): Promise<StateBody> {
   const adv = await postAdvanceRoute();
   if (adv.status !== 200) throw new Error(`advance failed: ${adv.status}`);
   return adv.json();
+}
+
+/**
+ * Extraction for a second Topic that overlaps the first: the responder
+ * reads the ids the prompt lists as already in the Graph and attaches
+ * "Softmax" to the existing one, adding one genuinely new Concept.
+ */
+export function attachingExtractionResponder(request: {
+  messages: Parameters<typeof promptText>[0]["messages"];
+}): string {
+  const text = promptText(request as never);
+  const softmaxId = text.match(/- id: (\S+) \| Softmax:/)?.[1];
+  return JSON.stringify({
+    concepts: [
+      {
+        key: "softmax",
+        label: "Softmax",
+        summary: "Turning scores into a probability distribution.",
+        requires: [],
+        ...(softmaxId ? { attachTo: softmaxId } : {}),
+      },
+      {
+        key: "cross-entropy",
+        label: "Cross entropy",
+        summary: "Scoring a predicted distribution against the truth.",
+        requires: ["softmax"],
+      },
+    ],
+  });
+}
+
+/** Start a second Session whose investigation attaches to the Graph. */
+export async function startOverlappingSession(
+  topic = "cross entropy loss",
+): Promise<StateBody> {
+  scriptModelResponse(
+    RESEARCH_NOTES,
+    attachingExtractionResponder,
+    diagnosticQuestionsResponder,
+  );
+  const res = await postSessionRoute(jsonRequest("/api/session", { topic }));
+  if (res.status !== 200) {
+    throw new Error(`startOverlappingSession failed: ${res.status}`);
+  }
+  return res.json();
 }

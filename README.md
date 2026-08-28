@@ -12,8 +12,10 @@ Named after Plato's *Meno* — the dialogue built around the paradox of how you 
 2. **Investigate** — the agent researches the topic with Google Search grounding and identifies its prerequisites.
 3. **Diagnose** — it asks you questions on the prerequisites and the topic itself to find your starting point.
 4. **Preview the path** — it plans an ordered list of atomic concept nodes and shows you the whole journey upfront.
-5. **Learn, one node at a time** — each node is taught and quizzed only when you reach it (lazy generation). Your answer can trigger the agent to insert a remedial node before continuing, or skip the next one if you clearly already know it — the graph reshapes live as this happens.
+5. **Learn, one node at a time** — each node is taught and quizzed only when you reach it (lazy generation). Two levers sit in the composer: **Test me** when it's too easy (it skips the teaching, never the verification), and **Break it down** when it's too hard (the agent finds the prerequisite you're missing and teaches that first, as a short detour). Your answers can also trigger the agent to insert a remedial node or skip the next one — the graph reshapes live as this happens.
 6. **Review the graph** — unlocked concepts form a node-link graph; each node links back to the session where you learned it. You can rename or delete nodes yourself; edits are recorded in an audit log that feeds back into future graph updates.
+
+Sessions behave like conversations: several can be in progress at once, each resumable where you left off, and they all feed the one graph. A topic that rests on something you've already learned *attaches* to the concept you already have rather than duplicating it — and if you've already unlocked it, it's skipped rather than taught twice.
 
 ## Stack
 
@@ -52,11 +54,41 @@ npm run dev:emu   # real Gemini + local Firestore emulator (data persists in .em
 
 Open http://localhost:3000. `dev:emu` is the safe dogfooding mode: Sessions live only on your machine and survive restarts, without touching production data.
 
+### Seed the emulator
+
+Working on the interface needs a Graph to look at, and building one through the app costs real model calls. With `dev:emu` running:
+
+```bash
+npm run seed              # a Graph covering every UI state
+npm run seed -- --reset   # wipe it first
+```
+
+That gives you two Sessions (one mid-Path, one complete), a remedial detour, both kinds of skip, Lessons with markdown and mathematics, a Check and an Edit — enough to exercise every screen without calling a model. It refuses to run unless it can reach an emulator, so it can never write to live Firestore.
+
 ### Run the tests
 
 ```bash
 npm test
 ```
+
+### Migrating an existing graph
+
+The schema changed when Path state moved off the Concept and onto the
+Session (ADR-0004). The app reads graphs written before that change, but to
+rewrite them for good:
+
+```bash
+npm run migrate                 # dry run: prints what would change
+npm run migrate -- --apply      # writes it
+
+# against the emulator instead of your real Firestore:
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8792 npm run migrate
+```
+
+It reads `.env.local` for `GCP_PROJECT_ID` and credentials, names the target
+it is about to touch (live Firestore or the emulator) before doing anything,
+and refuses to run rather than guess a project id. It is idempotent: a graph
+already in the new shape is left alone.
 
 Tests are black-box: they call the server interface (route handlers) the way the browser would, running against the **Firestore emulator** (needs Java 21+; started automatically) with a **scripted fake model** substituted at the model-injection seam (`MENO_MODEL=scripted`), so no GCP credentials or network are needed.
 

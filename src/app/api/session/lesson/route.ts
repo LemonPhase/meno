@@ -1,23 +1,25 @@
 import { lessonReply } from "@/ai/lesson";
+import { sessionIdFrom } from "@/lib/api";
 import {
   appendLessonMessages,
-  getCurrentState,
+  getSessionState,
   lessonMessage,
 } from "@/lib/store";
 
 /** Free-form conversation within the Active Concept's Lesson. */
 export async function POST(request: Request) {
-  let message: unknown;
+  let body: Record<string, unknown>;
   try {
-    ({ message } = await request.json());
+    body = await request.json();
   } catch {
     return Response.json({ error: "invalid JSON body" }, { status: 400 });
   }
+  const { message } = body;
   if (typeof message !== "string" || message.trim() === "") {
     return Response.json({ error: "message is required" }, { status: 400 });
   }
 
-  const state = await getCurrentState();
+  const state = await getSessionState(sessionIdFrom(request, body));
   const { session } = state;
   if (!session || session.phase !== "learning" || !session.activeConceptId) {
     return Response.json(
@@ -38,10 +40,10 @@ export async function POST(request: Request) {
     message: message.trim(),
   });
 
-  await appendLessonMessages(concept.id, [
+  await appendLessonMessages(session.id, concept.id, [
     lessonMessage("user", message.trim()),
     lessonMessage("reply", reply),
   ]);
 
-  return Response.json(await getCurrentState());
+  return Response.json(await getSessionState(session.id));
 }

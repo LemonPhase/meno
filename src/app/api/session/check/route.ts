@@ -1,17 +1,27 @@
 import { generateMasteryCheck } from "@/ai/lesson";
+import { sessionIdFrom } from "@/lib/api";
 import {
   appendLessonMessages,
-  getCurrentState,
+  getSessionState,
   lessonMessage,
   saveMasteryCheck,
 } from "@/lib/store";
 
 /**
- * The user asks to be tested on the Active Concept. Idempotent: if a
- * mastery Check is already pending, it's returned rather than regenerated.
+ * The user asks to be tested on the Active Concept — the "too easy" route
+ * as much as the ready-to-be-tested one. Idempotent: a mastery Check
+ * already pending is returned rather than regenerated.
  */
-export async function POST() {
-  const state = await getCurrentState();
+export async function POST(request?: Request) {
+  let body: Record<string, unknown> = {};
+  if (request) {
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
+    }
+  }
+  const state = await getSessionState(sessionIdFrom(request, body));
   const { session } = state;
   if (!session || session.phase !== "learning" || !session.activeConceptId) {
     return Response.json(
@@ -40,9 +50,9 @@ export async function POST() {
   });
 
   const check = await saveMasteryCheck(session.id, concept.id, question);
-  await appendLessonMessages(concept.id, [
+  await appendLessonMessages(session.id, concept.id, [
     lessonMessage("check-question", question, check.id),
   ]);
 
-  return Response.json(await getCurrentState());
+  return Response.json(await getSessionState(session.id));
 }

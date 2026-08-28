@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "bash scripts/test.sh run",
-    "test:watch": "bash scripts/test.sh watch"
+    "test:watch": "bash scripts/test.sh watch",
+    "migrate": "node scripts/migrate-adr-0004.mjs"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.41.0",

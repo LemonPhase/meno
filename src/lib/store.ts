@@ -4,6 +4,8 @@ import { DEMO_USER_ID } from "./constants";
 import type {
   Check,
   Concept,
+  ConceptOrigin,
+  ConceptStatus,
   Edit,
   Lesson,
   LessonMessage,
@@ -28,6 +30,66 @@ export const graphRef = (graphId: string = DEMO_USER_ID) =>
 
 export const lessonKey = (sessionId: string, conceptId: string) =>
   `${sessionId}__${conceptId}`;
+
+/**
+ * Documents written before ADR-0004 kept Path state on the Concept. The
+ * readers below adapt them in place so a graph created by the old code is
+ * still readable by the new — `scripts/migrate-adr-0004.mjs` rewrites them
+ * for good, and these adapters can go once every graph has been migrated.
+ */
+type LegacyConcept = Concept & {
+  status?: ConceptStatus;
+  origin?: ConceptOrigin;
+  order?: number | null;
+  sessionId?: string;
+  extractionIndex?: number;
+};
+
+export function asConcept(data: FirebaseFirestore.DocumentData): Concept {
+  const raw = data as LegacyConcept;
+  return {
+    id: raw.id,
+    label: raw.label,
+    summary: raw.summary,
+    unlocked: raw.unlocked ?? raw.status === "unlocked",
+    skipped: raw.skipped ?? false,
+    requires: raw.requires ?? [],
+    originSessionId: raw.originSessionId ?? raw.sessionId ?? "",
+    createdAt: raw.createdAt ?? 0,
+  };
+}
+
+const rank = (c: LegacyConcept) => c.extractionIndex ?? c.createdAt ?? 0;
+
+/**
+ * A Session, reconstructing conceptIds and the Path from the Concepts when
+ * the stored document predates them. `pool` is any Concepts already to hand;
+ * without it a legacy Session simply reads as having no Path yet.
+ */
+export function asSession(
+  data: FirebaseFirestore.DocumentData,
+  pool: FirebaseFirestore.DocumentData[] = [],
+): Session {
+  const raw = data as Session;
+  if (Array.isArray(raw.path) && Array.isArray(raw.conceptIds)) return raw;
+
+  const mine = (pool as LegacyConcept[])
+    .filter((c) => c.sessionId === raw.id)
+    .sort((a, b) => rank(a) - rank(b));
+  return {
+    ...raw,
+    conceptIds: raw.conceptIds ?? mine.map((c) => c.id),
+    path:
+      raw.path ??
+      mine
+        .filter((c) => c.order !== null && c.order !== undefined)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .map((c) => ({
+          conceptId: c.id,
+          origin: c.origin ?? ("planned" as const),
+        })),
+  };
+}
 
 export type SessionState = {
   session: Session | null;
@@ -66,7 +128,7 @@ async function conceptsByIds(
   if (ids.length === 0) return [];
   const col = graphRef(graphId).collection("concepts");
   const docs = await db.getAll(...ids.map((id) => col.doc(id)));
-  return docs.filter((d) => d.exists).map((d) => d.data() as Concept);
+  return docs.filter((d) => d.exists).map((d) => asConcept(d.data()!));
 }
 
 export async function createSession(
@@ -344,13 +406,16 @@ export async function appendLessonMessages(
   messages: LessonMessage[],
   graphId: string = DEMO_USER_ID,
 ): Promise<void> {
-  const ref = graphRef(graphId)
-    .collection("lessons")
-    .doc(lessonKey(sessionId, conceptId));
+  const lessons = graphRef(graphId).collection("lessons");
+  const ref = lessons.doc(lessonKey(sessionId, conceptId));
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
-    const lesson = snap.data() as Lesson;
-    tx.update(ref, { messages: [...lesson.messages, ...messages] });
+    // Pre-ADR-0004 Lessons are keyed by Concept alone; append to whichever
+    // document actually holds this Lesson.
+    const target = snap.exists ? snap : await tx.get(lessons.doc(conceptId));
+    if (!target.exists) throw new Error("no Lesson to append to");
+    const lesson = target.data() as Lesson;
+    tx.update(target.ref, { messages: [...lesson.messages, ...messages] });
   });
 }
 
@@ -554,7 +619,7 @@ export async function sessionsLearning(
     .where("activeConceptId", "==", conceptId)
     .get();
   return snap.docs
-    .map((d) => d.data() as Session)
+    .map((d) => asSession(d.data()))
     .filter((s) => s.phase !== "complete");
 }
 
@@ -568,11 +633,17 @@ export async function deleteConcept(
   graphId: string = DEMO_USER_ID,
 ): Promise<void> {
   const graph = graphRef(graphId);
-  const [conceptDocs, sessionDocs, lessonDocs] = await Promise.all([
-    graph.collection("concepts").where("requires", "array-contains", concept.id).get(),
-    graph.collection("sessions").where("conceptIds", "array-contains", concept.id).get(),
-    graph.collection("lessons").where("conceptId", "==", concept.id).get(),
-  ]);
+  const [conceptDocs, allConceptDocs, sessionDocs, lessonDocs] =
+    await Promise.all([
+      graph
+        .collection("concepts")
+        .where("requires", "array-contains", concept.id)
+        .get(),
+      graph.collection("concepts").get(),
+      graph.collection("sessions").get(),
+      graph.collection("lessons").where("conceptId", "==", concept.id).get(),
+    ]);
+  const allConcepts = allConceptDocs.docs.map((d) => d.data());
   const edit: Edit = {
     id: randomUUID(),
     conceptId: concept.id,
@@ -586,13 +657,14 @@ export async function deleteConcept(
   batch.delete(graph.collection("concepts").doc(concept.id));
   for (const doc of lessonDocs.docs) batch.delete(doc.ref);
   for (const doc of conceptDocs.docs) {
-    const other = doc.data() as Concept;
+    const other = asConcept(doc.data());
     batch.update(doc.ref, {
       requires: other.requires.filter((r) => r !== concept.id),
     });
   }
   for (const doc of sessionDocs.docs) {
-    const other = doc.data() as Session;
+    const other = asSession(doc.data(), allConcepts);
+    if (!other.conceptIds.includes(concept.id)) continue;
     batch.update(doc.ref, {
       conceptIds: other.conceptIds.filter((id) => id !== concept.id),
       path: other.path.filter((e) => e.conceptId !== concept.id),
@@ -635,7 +707,7 @@ export async function getSession(
     .collection("sessions")
     .doc(sessionId)
     .get();
-  return doc.exists ? (doc.data() as Session) : null;
+  return doc.exists ? asSession(doc.data()!) : null;
 }
 
 /**
@@ -649,7 +721,7 @@ export async function latestSessionId(
     .collection("sessions")
     .orderBy("createdAt", "desc")
     .get();
-  const sessions = snap.docs.map((d) => d.data() as Session);
+  const sessions = snap.docs.map((d) => asSession(d.data()));
   const live = sessions.find((s) => s.phase !== "complete");
   return (live ?? sessions[0])?.id ?? null;
 }
@@ -664,11 +736,28 @@ export async function getSessionState(
 ): Promise<SessionState> {
   const id = sessionId ?? (await latestSessionId(graphId));
   if (!id) return { session: null, concepts: [], checks: [], lessons: [] };
-  const session = await getSession(id, graphId);
-  if (!session) return { session: null, concepts: [], checks: [], lessons: [] };
+  const doc = await graphRef(graphId).collection("sessions").doc(id).get();
+  if (!doc.exists)
+    return { session: null, concepts: [], checks: [], lessons: [] };
+
+  // A Session written before ADR-0004 has no conceptIds to fetch by; its
+  // Concepts still carry the sessionId, so find them that way.
+  const raw = doc.data()!;
+  const legacy = !Array.isArray(raw.conceptIds);
+  const pool = legacy
+    ? (
+        await graphRef(graphId)
+          .collection("concepts")
+          .where("sessionId", "==", id)
+          .get()
+      ).docs.map((d) => d.data())
+    : [];
+  const session = asSession(raw, pool);
 
   const [concepts, checks, lessons] = await Promise.all([
-    conceptsByIds(session.conceptIds, graphId),
+    legacy
+      ? Promise.resolve(pool.map(asConcept))
+      : conceptsByIds(session.conceptIds, graphId),
     getChecks(id, graphId),
     getLessons(id, graphId),
   ]);
@@ -688,14 +777,15 @@ export async function listSessions(
     graph.collection("sessions").orderBy("createdAt", "desc").get(),
     graph.collection("concepts").get(),
   ]);
+  const allConcepts = conceptSnap.docs.map((d) => d.data());
   const unlocked = new Set(
-    conceptSnap.docs
-      .map((d) => d.data() as Concept)
+    allConcepts
+      .map(asConcept)
       .filter((c) => c.unlocked)
       .map((c) => c.id),
   );
   return sessionSnap.docs.map((doc) => {
-    const session = doc.data() as Session;
+    const session = asSession(doc.data(), allConcepts);
     return {
       id: session.id,
       topic: session.topic,
@@ -730,7 +820,8 @@ export async function getGraphOverview(graphId: string = DEMO_USER_ID): Promise<
       graph.collection("lessons").get(),
     ]);
 
-  const sessions = sessionSnap.docs.map((d) => d.data() as Session);
+  const allConcepts = conceptSnap.docs.map((d) => d.data());
+  const sessions = sessionSnap.docs.map((d) => asSession(d.data(), allConcepts));
   const active = new Set(
     sessions
       .filter((s) => s.phase !== "complete" && s.activeConceptId)
@@ -747,7 +838,7 @@ export async function getGraphOverview(graphId: string = DEMO_USER_ID): Promise<
   // status is the Graph's own view: learned, being learned somewhere, or
   // not yet reached.
   const concepts: SessionConcept[] = conceptSnap.docs
-    .map((d) => d.data() as Concept)
+    .map((d) => asConcept(d.data()))
     .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
     .map((c) => ({
       ...c,

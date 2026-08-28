@@ -54,6 +54,17 @@ npm run dev:emu   # real Gemini + local Firestore emulator (data persists in .em
 
 Open http://localhost:3000. `dev:emu` is the safe dogfooding mode: Sessions live only on your machine and survive restarts, without touching production data.
 
+### Seed the emulator
+
+Working on the interface needs a Graph to look at, and building one through the app costs real model calls. With `dev:emu` running:
+
+```bash
+npm run seed              # a Graph covering every UI state
+npm run seed -- --reset   # wipe it first
+```
+
+That gives you two Sessions (one mid-Path, one complete), a remedial detour, both kinds of skip, Lessons with markdown and mathematics, a Check and an Edit — enough to exercise every screen without calling a model. It refuses to run unless it can reach an emulator, so it can never write to live Firestore.
+
 ### Run the tests
 
 ```bash

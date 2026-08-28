@@ -16,10 +16,16 @@ export const InvestigationSchema = z.object({
         key: z
           .string()
           .describe("unique kebab-case key for this concept, e.g. 'dot-product'"),
-        label: z.string().describe("short human-readable concept name"),
+        label: z
+          .string()
+          .describe("short human-readable concept name, never TeX"),
         summary: z
           .string()
-          .describe("one or two sentences: what this concept is"),
+          .describe(
+            "one or two sentences: what this concept is. Plain prose — " +
+              "labels and summaries are shown outside the lesson, where " +
+              "markdown and TeX do not render",
+          ),
         requires: z
           .array(z.string())
           .describe("keys of concepts that must be understood first"),

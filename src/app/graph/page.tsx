@@ -72,13 +72,15 @@ export default function GraphPage() {
   }
 
   return (
-    <div className="page fade-in">
-      <span className="kicker sc">Everything you have unlocked</span>
-      <h1 className="h-display">Your graph</h1>
-      <p className="lede">
-        One graph, many sessions. Click a concept to read back the lesson it
-        came from, rename it, or take it out.
-      </p>
+    <div className="page wide fade-in">
+      <div className="intro">
+        <span className="kicker sc">Everything you have unlocked</span>
+        <h1 className="h-display">Your graph</h1>
+        <p className="lede">
+          One graph, many sessions. Click a concept to read back the lesson it
+          came from, rename it, or take it out.
+        </p>
+      </div>
       <div style={{ marginTop: 24 }}>
         <GraphView
           concepts={data.concepts}

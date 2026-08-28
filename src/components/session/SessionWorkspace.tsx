@@ -557,33 +557,36 @@ function Learning({
             >
               {pendingCheck ? "Answer" : "Send"}
             </button>
-            {!pendingCheck && (
+          </div>
+        </div>
+        {/* The guidance line is the control: these two act on the Concept,
+            not on what you typed, so they sit outside the field. */}
+        <div className="hint">
+          <span>
+            {pendingCheck ? (
+              "Answer in your own words — you can attempt this as many times as you like."
+            ) : (
               <>
+                Too easy?{" "}
                 <button
-                  className="btn-box sc"
+                  className="hint-act"
                   disabled={!!busy}
-                  title="Too easy? Skip the teaching, not the verification: ask for the mastery check whenever you feel ready — pass it and the concept unlocks. You can attempt it as many times as you like."
+                  title="Skip the teaching, not the verification: ask for the mastery check whenever you feel ready — pass it and the concept unlocks. You can attempt it as many times as you like."
                   onClick={() => call("check", "/api/session/check")}
                 >
                   Test me
-                </button>
+                </button>{" "}
+                · Too hard?{" "}
                 <button
-                  className="btn-box sc"
+                  className="hint-act"
                   disabled={!!busy}
-                  title="Too hard? Meno finds the prerequisite you are missing and teaches that first, as a short detour before this concept. The concept itself stays as it is."
+                  title="Meno finds the prerequisite you are missing and teaches that first, as a short detour before this concept. The concept itself stays as it is."
                   onClick={() => call("breakdown", "/api/session/breakdown")}
                 >
                   Break it down
                 </button>
               </>
             )}
-          </div>
-        </div>
-        <div className="hint">
-          <span>
-            {pendingCheck
-              ? "Answer in your own words — you can attempt this as many times as you like."
-              : "Ask as much as you want. Too easy? Test me. Too hard? Break it down."}
           </span>
           <span>
             <kbd>↵</kbd> send · <kbd>⇧↵</kbd> new line

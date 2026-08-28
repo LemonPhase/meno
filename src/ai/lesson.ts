@@ -24,11 +24,24 @@ const conceptIntro = (concept: Pick<Concept, "label" | "summary">) =>
  * learner as literal dollar signs. Mathematics belongs in the prose voice,
  * written with the characters a typesetter would use.
  */
-const VOICE = `Write for a reading surface that renders Markdown but NOT LaTeX.
-Never use $...$, \\(...\\), \\[...\\] or LaTeX commands like \\text{} or \\frac{}.
-Write mathematics inline in plain prose using ordinary characters — P(H),
-P(A | B), √d, x², Σ, ≈, ≤ — and set a displayed formula as a fenced code
-block. Use Markdown (bold, lists, tables) where it genuinely helps.`;
+const VOICE = `Write for a reading surface that renders Markdown, and LaTeX
+through KaTeX. Set every piece of mathematics in TeX: $...$ inline, and
+$$ for a displayed formula. A displayed formula must be written with the
+opening $$ ALONE on its own line and the closing $$ ALONE on its own line
+— never "$$\\begin{aligned}" and never "\\end{aligned}$$" — like this:
+
+$$
+\\begin{aligned}
+f(x) &= x^2 \\\\
+     &= x \\cdot x
+\\end{aligned}
+$$
+
+Use only commands KaTeX supports (\\frac, \\sum, \\sqrt, \\cdot, \\text{},
+\\mathbb{}, aligned) — no packages, no \\newcommand, and end every row of
+an aligned block with \\\\. Write a literal dollar amount as \\$ so it is
+not read as maths. Reserve fenced code blocks for actual code. Use
+Markdown (bold, lists, tables) where it genuinely helps.`;
 
 export const teachConcept = ai.defineFlow(
   {
@@ -152,9 +165,14 @@ export const GradeSchema = z.object({
         .describe(
           "short human-readable concept name, as it will be shown to the " +
             "learner (e.g. 'Mutually exclusive events') — never an " +
-            "identifier like mutually_exclusive_events",
+            "identifier like mutually_exclusive_events, and never TeX",
         ),
-      summary: z.string().describe("one sentence: what this fills in"),
+      summary: z
+        .string()
+        .describe(
+          "one sentence: what this fills in. Plain prose — this is shown " +
+            "outside the lesson, where markdown and TeX do not render",
+        ),
     })
     .optional()
     .describe("required when adjustment is insert_remedial"),
@@ -300,9 +318,14 @@ export const BreakdownSchema = z.object({
         .describe(
           "short human-readable concept name, as it will be shown to the " +
             "learner (e.g. 'Mutually exclusive events') — never an " +
-            "identifier like mutually_exclusive_events",
+            "identifier like mutually_exclusive_events, and never TeX",
         ),
-      summary: z.string().describe("one sentence: what this fills in"),
+      summary: z
+        .string()
+        .describe(
+          "one sentence: what this fills in. Plain prose — this is shown " +
+            "outside the lesson, where markdown and TeX do not render",
+        ),
     })
     .optional()
     .describe("required when action is insert_remedial"),

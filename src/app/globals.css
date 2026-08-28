@@ -199,6 +199,10 @@ a { color: inherit; text-decoration: none; }
 .column.learning { padding-bottom: 0; }
 .flow { flex: 1; }
 .page { max-width: 780px; margin-inline: auto; padding: 52px 32px 120px; }
+/* The graph is a canvas, not prose: it earns room the reading measure
+   would deny it. Its own prose keeps the measure via .intro. */
+.page.wide { max-width: 1240px; }
+.page.wide .intro { max-width: 640px; }
 
 /* Panels scroll without a standing scrollbar down their edge. */
 .side, .rail { scrollbar-width: none; -ms-overflow-style: none; }
@@ -347,12 +351,18 @@ a { color: inherit; text-decoration: none; }
 .act.primary:hover:not(:disabled)::after { opacity: 1; }
 .act.rubric-act { color: var(--rubric-ink); }
 .act.rubric-act::after { background: var(--rubric); }
-.btn-box {
-  border: 1px solid var(--rule); padding: 6px 13px; color: var(--ink2);
-  transition: border-color 0.18s ease, color 0.18s ease;
+/* Lesson actions, set inside the guidance line rather than the field. */
+.hint-act {
+  color: var(--rubric-ink); position: relative; padding-bottom: 1px;
+  white-space: nowrap;
 }
-.btn-box:hover:not(:disabled) { border-color: var(--rubric); color: var(--rubric-ink); }
-.btn-box:disabled { opacity: 0.45; cursor: default; }
+.hint-act::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+  background: var(--rubric); opacity: 0.4; transition: opacity 0.18s ease;
+}
+.hint-act:hover:not(:disabled)::after { opacity: 1; }
+.hint-act:disabled { color: var(--ink3); cursor: default; }
+.hint-act:disabled::after { opacity: 0; }
 
 .thinking { display: flex; align-items: center; gap: 10px; color: var(--ink3); margin: 6px 0 14px; }
 .thinking i {
@@ -423,12 +433,49 @@ a { color: inherit; text-decoration: none; }
 .tally .how { color: var(--ink3); font-size: 13.5px; font-style: italic; white-space: nowrap; }
 
 /* =================== graph destination =================== */
+/* Closed, the panel column is 0fr and the graph — capped at its reading
+   width — sits centred on the page. Picking a Concept opens the column,
+   and the graph slides left to make room instead of the detail appearing
+   below the fold. Both tracks and the gap animate, as the session map's
+   disclosure does. */
+.gcanvas {
+  /* The closed track is 0px, not 0fr: a <flex> and a <length> are not
+     interpolable, so grid-template-columns would fall back to a discrete
+     animation and snap the panel open at the halfway mark. */
+  display: grid; grid-template-columns: minmax(0, 1fr) 0px; gap: 0;
+  align-items: start; margin-bottom: 22px;
+  transition: grid-template-columns 0.46s cubic-bezier(0.4, 0, 0.2, 1),
+              gap 0.46s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.gcanvas.open { grid-template-columns: minmax(0, 1fr) 380px; gap: 28px; }
+/* Reading a whole Lesson back needs more measure than a summary does. */
+.gcanvas.open.reviewing { grid-template-columns: minmax(0, 1fr) 520px; }
+
+.gdetail { overflow: hidden; min-width: 0; }
+.gdetail-in {
+  width: 380px; max-width: 100%;
+  border-left: 1px solid var(--rule); padding-left: 20px;
+  opacity: 0; transform: translateX(10px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.gcanvas.open .gdetail-in {
+  opacity: 1; transform: none;
+  transition: opacity 0.3s ease 0.16s, transform 0.34s ease 0.16s;
+}
+.gcanvas.open.reviewing .gdetail-in { width: 520px; }
+
 .graphwrap {
   border: 1px solid var(--rule); background: var(--sheet); box-shadow: var(--shadow);
-  margin-bottom: 22px; overflow: hidden;
+  /* width:100% is load-bearing — auto inline margins alone would make this
+     grid item shrink to fit rather than fill the track and centre. */
+  width: 100%; max-width: 780px; margin-inline: auto; overflow: hidden;
 }
 .graphwrap svg { display: block; width: 100%; height: auto; }
 .gnode { cursor: pointer; }
+/* Clicking a node focuses it; only keyboard focus should draw a ring,
+   and the selected node already reads as selected through its rule. */
+.gnode:focus { outline: none; }
+.gnode:focus-visible { outline: 1px solid var(--lapis); outline-offset: 3px; }
 .gnode text {
   font-family: var(--font-serif), Georgia, serif; font-size: 13px;
   paint-order: stroke; stroke: var(--sheet); stroke-width: 4px; stroke-linejoin: round;
@@ -450,10 +497,9 @@ a { color: inherit; text-decoration: none; }
 .legend span { display: flex; align-items: center; gap: 6px; }
 .legend i { width: 5px; height: 5px; display: block; }
 
-.detail { border-top: 1px solid var(--rule); padding-top: 16px; }
-.detail h4 { font-size: 20px; font-weight: 400; line-height: 1.3; margin-bottom: 2px; }
-.detail .sm { color: var(--ink2); font-size: 15.5px; line-height: 1.6; }
-.detail .acts { display: flex; gap: 16px; margin-top: 12px; }
+.gdetail-in h4 { font-size: 20px; font-weight: 400; line-height: 1.3; margin-bottom: 2px; }
+.gdetail-in .sm { color: var(--ink2); font-size: 15.5px; line-height: 1.6; }
+.gdetail-in .acts { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; }
 .rename { margin-top: 10px; border-bottom: 1px solid var(--ink); padding-bottom: 5px; display: flex; gap: 12px; }
 .rename input { flex: 1; background: none; border: 0; outline: none; font: inherit; font-size: 17px; color: inherit; }
 .editlog li { padding: 8px 0; border-bottom: 1px solid var(--rule2); font-size: 13.5px; color: var(--ink3); line-height: 1.5; }
@@ -551,6 +597,21 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink3);
   border-bottom-color: var(--rule);
 }
+/* --- mathematics ---------------------------------------------------
+   KaTeX sets Computer Modern, a book face: it belongs beside Newsreader
+   rather than fighting it. Colour is inherited, so the three inks and
+   both themes come free; only size, rhythm and overflow need saying. */
+.md .katex { font-size: 1.06em; }
+.md .katex-display {
+  margin: 20px 0; padding: 3px 0;
+  overflow-x: auto; overflow-y: hidden;
+}
+.md .katex-display > .katex { font-size: 1.14em; }
+/* A formula reveals whole, so it must not be an inline-block island. */
+.md .w > .katex { display: inline-block; }
+/* Even in the Check's italic voice, mathematics stays upright. */
+.rubric .md .katex { font-style: normal; }
+
 /* Inside a Check the whole block stays in the rubric's italic voice. */
 .rubric .md p { font-style: italic; font-size: 17px; line-height: 1.62; }
 .rubric .md code { font-style: normal; }
@@ -568,6 +629,22 @@ a { color: inherit; text-decoration: none; }
 
 /* =================== responsive =================== */
 @media (max-width: 1100px) {
+  /* Too narrow to sit beside the graph: the panel goes back under it,
+     collapsing on its row instead of its column. */
+  .gcanvas, .gcanvas.open, .gcanvas.open.reviewing {
+    grid-template-columns: minmax(0, 1fr); gap: 0;
+  }
+  .gdetail {
+    display: grid; grid-template-rows: 0fr;
+    transition: grid-template-rows 0.4s ease;
+  }
+  .gcanvas.open .gdetail { grid-template-rows: 1fr; }
+  .gdetail > * { min-height: 0; }
+  .gcanvas .gdetail-in, .gcanvas.open.reviewing .gdetail-in {
+    width: auto; margin-top: 22px; padding-left: 0; padding-top: 16px;
+    border-left: 0; border-top: 1px solid var(--rule);
+  }
+
   .work.with-rail { grid-template-columns: minmax(0, 1fr); }
   .work.with-rail .rail { display: none; }
   .work.with-rail .rail.open {

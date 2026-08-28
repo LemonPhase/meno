@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { clearScriptedResponses, scriptModelResponse } from "@/ai/scripted";
 import { POST as postBreakdown } from "@/app/api/session/breakdown/route";
 import { db } from "@/lib/firebase-admin";
-import { graphRef } from "@/lib/store";
+import { graphRef, humanizeLabel } from "@/lib/store";
 import { reachLearning, type StateBody } from "./helpers";
 
 // "Break it down": too hard means a prerequisite is missing, so the answer
@@ -77,5 +77,22 @@ describe("POST /api/session/breakdown", () => {
   it("refuses a Session that is not Learning", async () => {
     const res = await postBreakdown();
     expect(res.status).toBe(409);
+  });
+});
+
+describe("humanizeLabel", () => {
+  it("turns an identifier the model returned into a readable name", () => {
+    expect(humanizeLabel("mutually_exclusive_events")).toBe(
+      "Mutually exclusive events",
+    );
+    expect(humanizeLabel("vector-norms")).toBe("Vector norms");
+  });
+
+  it("leaves a name a person would write alone", () => {
+    expect(humanizeLabel("Mutually exclusive events")).toBe(
+      "Mutually exclusive events",
+    );
+    expect(humanizeLabel("Query, key, value")).toBe("Query, key, value");
+    expect(humanizeLabel("p-values")).toBe("P values");
   });
 });

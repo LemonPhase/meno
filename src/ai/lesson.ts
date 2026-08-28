@@ -19,6 +19,17 @@ const transcript = (lesson: Pick<Lesson, "messages">) =>
 const conceptIntro = (concept: Pick<Concept, "label" | "summary">) =>
   `Concept: ${concept.label} — ${concept.summary}`;
 
+/**
+ * The reading surface renders Markdown, not LaTeX: a `$P(H)$` reaches the
+ * learner as literal dollar signs. Mathematics belongs in the prose voice,
+ * written with the characters a typesetter would use.
+ */
+const VOICE = `Write for a reading surface that renders Markdown but NOT LaTeX.
+Never use $...$, \\(...\\), \\[...\\] or LaTeX commands like \\text{} or \\frac{}.
+Write mathematics inline in plain prose using ordinary characters — P(H),
+P(A | B), √d, x², Σ, ≈, ≤ — and set a displayed formula as a fenced code
+block. Use Markdown (bold, lists, tables) where it genuinely helps.`;
+
 export const teachConcept = ai.defineFlow(
   {
     name: "teachConcept",
@@ -40,7 +51,9 @@ They already understand: ${unlockedLabels.join(", ") || "(nothing yet)"}.
 
 Teach exactly this one concept, building on what they already understand.
 Be concrete, use one good example, and keep it tight (150-300 words).
-End by inviting questions, or to say when they're ready to be tested.`,
+End by inviting questions, or to say when they're ready to be tested.
+
+${VOICE}`,
     });
     return { exposition: res.text };
   },
@@ -74,7 +87,9 @@ The learner says:
 ${message}
 
 Answer helpfully and concisely, staying on this concept. If they seem ready,
-remind them they can ask to be tested.`,
+remind them they can ask to be tested.
+
+${VOICE}`,
     });
     return { reply: res.text };
   },
@@ -104,7 +119,9 @@ The lesson so far (note any earlier check attempts — never repeat a question):
 ${transcript(lesson as Lesson)}
 
 Write ONE fresh question that tests real understanding of this concept,
-answerable in a sentence or two of free text.`,
+answerable in a sentence or two of free text.
+
+${VOICE}`,
       output: { schema: z.object({ question: z.string() }) },
     });
     const out = res.output;
@@ -130,7 +147,13 @@ export const GradeSchema = z.object({
     ),
   remedial: z
     .object({
-      label: z.string(),
+      label: z
+        .string()
+        .describe(
+          "short human-readable concept name, as it will be shown to the " +
+            "learner (e.g. 'Mutually exclusive events') — never an " +
+            "identifier like mutually_exclusive_events",
+        ),
       summary: z.string().describe("one sentence: what this fills in"),
     })
     .optional()
@@ -190,6 +213,8 @@ Grade it: "pass" only if the answer demonstrates real understanding of the
 concept. Give brief, encouraging feedback either way — if it's a fail, say
 what was missing without giving the full answer away.
 
+${VOICE}
+
 You may also adjust the path (adjustment field):
 - "insert_remedial" with a remedial {label, summary} when the answer reveals
   a specific underlying gap worth its own small lesson before continuing.
@@ -240,7 +265,9 @@ ${unlocked
 
 Write a short, congratulatory recap (100-150 words): celebrate the finish,
 recount the shape of what they learned including any skips or remedial
-detours, and encourage them to revisit their knowledge graph.`,
+detours, and encourage them to revisit their knowledge graph.
+
+${VOICE}`,
     });
     return { recap: res.text };
   },
@@ -268,7 +295,13 @@ export const BreakdownSchema = z.object({
     ),
   remedial: z
     .object({
-      label: z.string(),
+      label: z
+        .string()
+        .describe(
+          "short human-readable concept name, as it will be shown to the " +
+            "learner (e.g. 'Mutually exclusive events') — never an " +
+            "identifier like mutually_exclusive_events",
+        ),
       summary: z.string().describe("one sentence: what this fills in"),
     })
     .optional()
@@ -310,6 +343,8 @@ understand.
 
 Only if the lesson so far gives you genuinely nothing to go on, return "ask"
 with a single question about what is not landing.
+
+${VOICE}
 ${editContext ? `\n${editContext}\nNever insert a remedial that recreates something they deleted.` : ""}`,
       output: { schema: BreakdownSchema },
     });

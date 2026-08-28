@@ -419,6 +419,18 @@ export function nextLockedConcept(
  * the Path immediately after the Active one, ahead of everything that was
  * next. The previously-next Concept gains a `requires` edge on it.
  */
+/**
+ * Models sometimes hand back an identifier where a name belongs; a Concept
+ * label is read by a person, so `mutually_exclusive_events` becomes
+ * "Mutually exclusive events".
+ */
+export function humanizeLabel(label: string): string {
+  const trimmed = label.trim();
+  if (!/^[\p{Ll}\p{N}]+([_-][\p{Ll}\p{N}]+)+$/u.test(trimmed)) return trimmed;
+  const words = trimmed.split(/[_-]/);
+  return words[0].charAt(0).toUpperCase() + words[0].slice(1) + " " + words.slice(1).join(" ");
+}
+
 export async function spliceRemedialConcept(
   session: Session,
   active: Concept,
@@ -433,7 +445,7 @@ export async function spliceRemedialConcept(
 
   const concept: Concept = {
     id: `${session.id.slice(0, 8)}_rem${remedialCount + 1}`,
-    label: remedial.label,
+    label: humanizeLabel(remedial.label),
     summary: remedial.summary,
     unlocked: false,
     skipped: false,

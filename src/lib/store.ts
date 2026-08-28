@@ -441,6 +441,15 @@ export async function saveMasteryCheck(
   return check;
 }
 
+/** Replace a primed (unrevealed) Check's question in place as context grows. */
+export async function updateCheckQuestion(
+  checkId: string,
+  question: string,
+  graphId: string = DEMO_USER_ID,
+): Promise<void> {
+  await graphRef(graphId).collection("checks").doc(checkId).update({ question });
+}
+
 export async function recordCheckResult(
   checkId: string,
   answer: string,

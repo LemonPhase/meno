@@ -10,6 +10,7 @@ import LessonFlow, { EventLine } from "@/components/session/LessonFlow";
 import Markdown from "@/components/session/Markdown";
 import PathRail from "@/components/session/PathRail";
 import TopicEntry from "@/components/session/TopicEntry";
+import { revealedCheck } from "@/lib/checks";
 import type { Check, Lesson, Session, SessionConcept } from "@/lib/types";
 import { announceSessionsChanged, roman } from "@/lib/ui";
 
@@ -459,12 +460,13 @@ function Learning({
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lesson = state.lessons.find((l) => l.conceptId === active.id);
-  const pendingCheck = state.checks.find(
-    (c) =>
-      c.phase === "mastery" &&
-      c.conceptIds.includes(active.id) &&
-      c.verdict === null,
-  );
+  // Only a *revealed* Check — one already shown as a check-question message
+  // — puts the composer in answer mode. A Check may also sit primed and
+  // unrevealed (kept current turn by turn so "Test me" is instant); that
+  // one is not yet anything the learner has been asked.
+  const pendingCheck = lesson
+    ? revealedCheck(state.checks, lesson.messages, active.id)
+    : undefined;
 
   const byId = new Map(state.concepts.map((c) => [c.id, c]));
   const reqs = active.requires
@@ -507,6 +509,15 @@ function Learning({
   return (
     <>
       <div className="flow">
+        <div className="concept-head">
+          <span className="kicker sc">
+            Concept {roman(folio)}
+            {reqs.length > 0 && ` · requires ${reqs.join(" & ")}`}
+            {active.origin === "remedial" && " · detour"}
+          </span>
+          <h2 className="h-concept">{active.label}</h2>
+          <p className="concept-summary">{active.summary}</p>
+        </div>
         {resumeNote && (
           <div className="notice fade-in">
             <span>
@@ -519,12 +530,6 @@ function Learning({
             </button>
           </div>
         )}
-        <span className="kicker sc">
-          Concept {roman(folio)}
-          {reqs.length > 0 && ` · requires ${reqs.join(" & ")}`}
-          {active.origin === "remedial" && " · detour"}
-        </span>
-        <h2 className="h-concept">{active.label}</h2>
         <LessonFlow
           messages={lesson.messages}
           checks={state.checks}

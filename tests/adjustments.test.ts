@@ -18,10 +18,18 @@ beforeEach(async () => {
 const byLabel = (s: StateBody, label: string) =>
   s.concepts.find((c) => c.label === label)!;
 
-async function answerWith(grade: object): Promise<StateBody> {
-  scriptModelResponse(JSON.stringify({ question: "Q?" }));
+async function answerWith(
+  grade: { verdict: "pass" | "fail" } & Record<string, unknown>,
+): Promise<StateBody> {
+  // Whatever Check is Active already has one primed — from reachLearning()
+  // or the previous turn — so revealing it costs no model call.
   await postCheck();
-  scriptModelResponse(JSON.stringify(grade));
+  const responses = [JSON.stringify(grade)];
+  // A fail keeps a fresh Check primed for an immediate retry.
+  if (grade.verdict === "fail") {
+    responses.push(JSON.stringify({ question: "Retry?" }));
+  }
+  scriptModelResponse(...responses);
   const res = await postAnswer(
     jsonRequest("/api/session/check/answer", { answer: "my attempt" }),
   );
@@ -56,7 +64,6 @@ describe("Adjustment: insert_remedial", () => {
 
   it("a pass with insert_remedial activates the remedial next", async () => {
     await reachLearning();
-    scriptModelResponse(JSON.stringify({ question: "Q?" }));
     await postCheck();
     scriptModelResponse(
       JSON.stringify({
@@ -66,6 +73,7 @@ describe("Adjustment: insert_remedial", () => {
         remedial: { label: "Vectors", summary: "Ordered lists of numbers." },
       }),
       "Remedial exposition",
+      JSON.stringify({ question: "Vectors check?" }),
     );
     const res = await postAnswer(
       jsonRequest("/api/session/check/answer", { answer: "shaky but right" }),
@@ -96,7 +104,6 @@ describe("Adjustment: insert_remedial", () => {
 describe("Adjustment: skip_next", () => {
   it("marks the next Concept Unlocked + Skipped on a pass and advances past it", async () => {
     await reachLearning();
-    scriptModelResponse(JSON.stringify({ question: "Q?" }));
     await postCheck();
     scriptModelResponse(
       JSON.stringify({
@@ -105,6 +112,7 @@ describe("Adjustment: skip_next", () => {
         adjustment: "skip_next",
       }),
       "Attention exposition",
+      JSON.stringify({ question: "Attention check?" }),
     );
     const res = await postAnswer(
       jsonRequest("/api/session/check/answer", { answer: "great answer" }),
@@ -149,14 +157,19 @@ describe("Adjustment: skip_next", () => {
 
     // …then pass everything in the adjusted order:
     // dot-product → Vectors → Softmax → Attention.
-    const expositions = ["E-vectors", "E-softmax", "E-attention", "Recap!"];
+    const advances = [
+      { exposition: "E-vectors", question: "Q-vectors?" },
+      { exposition: "E-softmax", question: "Q-softmax?" },
+      { exposition: "E-attention", question: "Q-attention?" },
+    ];
     let state: StateBody | null = null;
-    for (const next of expositions) {
-      scriptModelResponse(JSON.stringify({ question: "Q?" }));
+    for (const { exposition, question } of advances) {
+      // Already primed — by the fail above, or the previous pass.
       await postCheck();
       scriptModelResponse(
         JSON.stringify({ verdict: "pass", feedback: "Yes." }),
-        next,
+        exposition,
+        JSON.stringify({ question }),
       );
       state = await (
         await postAnswer(
@@ -164,6 +177,18 @@ describe("Adjustment: skip_next", () => {
         )
       ).json();
     }
+    // Attention is the last Concept on the Path: passing it completes the
+    // Session with a Recap instead of priming another Check.
+    await postCheck();
+    scriptModelResponse(
+      JSON.stringify({ verdict: "pass", feedback: "Yes." }),
+      "Recap!",
+    );
+    state = await (
+      await postAnswer(
+        jsonRequest("/api/session/check/answer", { answer: "right" }),
+      )
+    ).json();
 
     expect(state!.session.phase).toBe("complete");
     expect(state!.session.recap).toBe("Recap!");

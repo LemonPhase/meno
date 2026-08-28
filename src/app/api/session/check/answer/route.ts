@@ -1,5 +1,6 @@
-import { gradeMasteryCheck } from "@/ai/lesson";
+import { generateMasteryCheck, gradeMasteryCheck } from "@/ai/lesson";
 import { sessionIdFrom } from "@/lib/api";
+import { revealedCheck } from "@/lib/checks";
 import { advanceToNextConcept } from "@/lib/progression";
 import {
   appendLessonMessages,
@@ -9,6 +10,7 @@ import {
   lessonMessage,
   nextLockedConcept,
   recordCheckResult,
+  saveMasteryCheck,
   skipNextConcept,
   spliceRemedialConcept,
   unlockConcept,
@@ -40,23 +42,18 @@ export async function POST(request: Request) {
     );
   }
 
-  const check = state.checks.find(
-    (c) =>
-      c.phase === "mastery" &&
-      c.conceptIds.includes(session.activeConceptId!) &&
-      c.verdict === null,
-  );
+  const concept = state.concepts.find((c) => c.id === session.activeConceptId)!;
+  const lesson = state.lessons.find(
+    (l) => l.conceptId === session.activeConceptId,
+  )!;
+
+  const check = revealedCheck(state.checks, lesson.messages, concept.id);
   if (!check) {
     return Response.json(
       { error: "no pending mastery Check — request one first" },
       { status: 409 },
     );
   }
-
-  const concept = state.concepts.find((c) => c.id === session.activeConceptId)!;
-  const lesson = state.lessons.find(
-    (l) => l.conceptId === session.activeConceptId,
-  )!;
 
   const next = nextLockedConcept(session, state.concepts);
   const grade = await gradeMasteryCheck({
@@ -103,6 +100,22 @@ export async function POST(request: Request) {
     await unlockConcept(concept.id);
     const refreshed = await getSessionState(session.id);
     await advanceToNextConcept(refreshed.session!, refreshed.concepts);
+  } else {
+    // A fail returns to open conversation and can be retried right away —
+    // keep a fresh mastery Check primed for that, the same as any other
+    // turn (see @/lib/checks).
+    const { question } = await generateMasteryCheck({
+      topic: session.topic,
+      concept: { label: concept.label, summary: concept.summary },
+      lesson: {
+        messages: [
+          ...lesson.messages,
+          lessonMessage("check-answer", answer.trim(), check.id),
+          lessonMessage("check-feedback", grade.feedback, check.id),
+        ],
+      },
+    });
+    await saveMasteryCheck(session.id, concept.id, question);
   }
 
   return Response.json(await getSessionState(session.id));

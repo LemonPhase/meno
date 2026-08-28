@@ -1,5 +1,10 @@
-import { teachConcept, writeRecap } from "@/ai/lesson";
-import { activateConcept, completeSession, nextLockedConcept } from "./store";
+import { generateMasteryCheck, teachConcept, writeRecap } from "@/ai/lesson";
+import {
+  activateConcept,
+  completeSession,
+  nextLockedConcept,
+  saveMasteryCheck,
+} from "./store";
 import type { Concept, Session } from "./types";
 
 /**
@@ -20,6 +25,14 @@ export async function advanceToNextConcept(
       unlockedLabels: unlocked.map((c) => c.label),
     });
     await activateConcept(session, next.id, exposition);
+    // The mastery Check is primed right alongside, so "Test me" is instant
+    // the moment this Concept becomes Active — see @/lib/checks.
+    const { question } = await generateMasteryCheck({
+      topic: session.topic,
+      concept: { label: next.label, summary: next.summary },
+      lesson: { messages: [] },
+    });
+    await saveMasteryCheck(session.id, next.id, question);
   } else {
     const onPath = new Map(session.path.map((e, i) => [e.conceptId, { i, e }]));
     const { recap } = await writeRecap({

@@ -109,13 +109,16 @@ describe("Attach", () => {
         answers: first.checks.map((c) => ({ checkId: c.id, answer: "no" })),
       }),
     );
-    scriptModelResponse("Dot product exposition");
+    scriptModelResponse(
+      "Dot product exposition",
+      JSON.stringify({ question: "Q1?" }),
+    );
     await postAdvance(
       new Request(`http://test/api/session/advance?session=${first.session.id}`, {
         method: "POST",
       }),
     );
-    scriptModelResponse(JSON.stringify({ question: "Q1?" }));
+    // Already primed alongside the advance above.
     await postCheck(
       new Request(`http://test/api/session/check?session=${first.session.id}`, {
         method: "POST",
@@ -124,6 +127,7 @@ describe("Attach", () => {
     scriptModelResponse(
       JSON.stringify({ verdict: "pass", feedback: "Good." }),
       "Softmax exposition",
+      JSON.stringify({ question: "Q2?" }),
     );
     const afterFirst: StateBody = await (
       await postAnswer(
@@ -136,7 +140,7 @@ describe("Attach", () => {
     expect(byLabel(afterFirst, "Softmax").status).toBe("active");
 
     // Unlocking is a Graph fact: pass Softmax in the first Session…
-    scriptModelResponse(JSON.stringify({ question: "Q2?" }));
+    // Already primed alongside the pass above.
     await postCheck(
       new Request(`http://test/api/session/check?session=${first.session.id}`, {
         method: "POST",
@@ -145,6 +149,7 @@ describe("Attach", () => {
     scriptModelResponse(
       JSON.stringify({ verdict: "pass", feedback: "Yes." }),
       "Attention exposition",
+      JSON.stringify({ question: "Q3?" }),
     );
     await postAnswer(
       jsonRequest("/api/session/check/answer", {

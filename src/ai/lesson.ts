@@ -58,13 +58,19 @@ export const teachConcept = ai.defineFlow(
   async ({ topic, concept, unlockedLabels }) => {
     const res = await ai.generate({
       model,
-      prompt: `You are a warm, precise tutor. The learner's goal: ${topic}.
+      prompt: `Write the reference entry for one Concept in a learner's path
+toward: ${topic}.
 ${conceptIntro(concept)}
-They already understand: ${unlockedLabels.join(", ") || "(nothing yet)"}.
+The reader already understands: ${unlockedLabels.join(", ") || "(nothing yet)"}.
 
-Teach exactly this one concept, building on what they already understand.
-Be concrete, use one good example, and keep it tight (150-300 words).
-End by inviting questions, or to say when they're ready to be tested.
+This is a formal, encyclopedic page, not a greeting or a chat message — it
+is the thing the learner lands on, before they've asked anything. Open with
+a precise definition, then explain the mechanism or reasoning behind it,
+building on what the reader already understands, and give one concrete
+example. Write in the expository register: no "you", no "let's", no
+"welcome back", no inviting questions — that voice belongs to the
+conversation that follows, once the reader actually asks something. Keep it
+tight (150-300 words).
 
 ${VOICE}`,
     });

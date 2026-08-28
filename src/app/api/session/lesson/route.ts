@@ -1,9 +1,12 @@
-import { lessonReply } from "@/ai/lesson";
+import { generateMasteryCheck, lessonReply } from "@/ai/lesson";
 import { sessionIdFrom } from "@/lib/api";
+import { primedCheck } from "@/lib/checks";
 import {
   appendLessonMessages,
   getSessionState,
   lessonMessage,
+  saveMasteryCheck,
+  updateCheckQuestion,
 } from "@/lib/store";
 
 /** Free-form conversation within the Active Concept's Lesson. */
@@ -32,18 +35,35 @@ export async function POST(request: Request) {
   const lesson = state.lessons.find(
     (l) => l.conceptId === session.activeConceptId,
   )!;
+  const text = message.trim();
 
   const { reply } = await lessonReply({
     topic: session.topic,
     concept: { label: concept.label, summary: concept.summary },
     lesson: { messages: lesson.messages },
-    message: message.trim(),
+    message: text,
   });
 
   await appendLessonMessages(session.id, concept.id, [
-    lessonMessage("user", message.trim()),
+    lessonMessage("user", text),
     lessonMessage("reply", reply),
   ]);
+
+  // The mastery Check stays attached to the conversation: regenerated
+  // alongside every reply so it reflects this turn, ready the instant
+  // the learner clicks "Test me" — see @/lib/checks.
+  const { question } = await generateMasteryCheck({
+    topic: session.topic,
+    concept: { label: concept.label, summary: concept.summary },
+    lesson: { messages: [...lesson.messages, lessonMessage("user", text)] },
+  });
+
+  const primed = primedCheck(state.checks, lesson.messages, concept.id);
+  if (primed) {
+    await updateCheckQuestion(primed.id, question);
+  } else {
+    await saveMasteryCheck(session.id, concept.id, question);
+  }
 
   return Response.json(await getSessionState(session.id));
 }

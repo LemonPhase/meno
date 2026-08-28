@@ -182,14 +182,16 @@ describe("Edits reach later agent calls as context", () => {
       ctx(softmax.id),
     );
 
-    scriptModelResponse(JSON.stringify({ question: "Q?" }));
-    await postCheck();
+    await postCheck(); // already primed alongside reachLearning()'s advance
 
     let gradingPrompt = "";
-    scriptModelResponse((req) => {
-      gradingPrompt = promptText(req);
-      return JSON.stringify({ verdict: "fail", feedback: "No." });
-    });
+    scriptModelResponse(
+      (req) => {
+        gradingPrompt = promptText(req);
+        return JSON.stringify({ verdict: "fail", feedback: "No." });
+      },
+      JSON.stringify({ question: "Retry?" }),
+    );
     await postAnswer(
       jsonRequest("/api/session/check/answer", { answer: "hm" }),
     );

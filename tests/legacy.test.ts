@@ -112,7 +112,10 @@ describe("a Graph written before ADR-0004", () => {
   it("appends to a Lesson that is still keyed by Concept alone", async () => {
     await seedLegacyGraph();
 
-    scriptModelResponse("A reply onto the legacy lesson.");
+    scriptModelResponse(
+      "A reply onto the legacy lesson.",
+      JSON.stringify({ question: "Q?" }),
+    );
     const res = await postLesson(
       jsonRequest("/api/session/lesson", { message: "why?" }),
     );

@@ -2,6 +2,7 @@ import { promptText, scriptModelResponse } from "@/ai/scripted";
 import { POST as postSessionRoute } from "@/app/api/session/route";
 import { POST as postDiagnosticRoute } from "@/app/api/session/diagnostic/route";
 import { POST as postAdvanceRoute } from "@/app/api/session/advance/route";
+import { revealedCheck } from "@/lib/checks";
 import type { Check, Lesson, Session, SessionConcept } from "@/lib/types";
 
 export type StateBody = {
@@ -10,6 +11,21 @@ export type StateBody = {
   checks: Check[];
   lessons: Lesson[];
 };
+
+/**
+ * The revealed mastery Check awaiting an answer for the Active Concept —
+ * distinct from one merely primed (generated ahead, not yet shown; see
+ * @/lib/checks). Tests that just need *a* Check pending should get there
+ * with `postCheck()`, which is free once something is primed.
+ */
+export function pendingCheck(s: StateBody): Check | undefined {
+  const conceptId = s.session.activeConceptId;
+  if (!conceptId) return undefined;
+  const lesson = s.lessons.find((l) => l.conceptId === conceptId);
+  return lesson
+    ? revealedCheck(s.checks, lesson.messages, conceptId)
+    : undefined;
+}
 
 export function jsonRequest(url: string, body: unknown): Request {
   return new Request(`http://test${url}`, {
@@ -76,10 +92,16 @@ export async function startInvestigatedSession(
   return res.json();
 }
 
+/** The question text `reachLearning()` primes for the first Concept. */
+export const FIRST_CHECK_QUESTION = "Check 1?";
+
 /**
  * Drive a fresh Session all the way into Learning: investigate, grade the
- * diagnostic (nothing known), and advance past the preview. Consumes five
- * scripted responses; the first exposition is "Exposition 1".
+ * diagnostic (nothing known), and advance past the preview. Consumes six
+ * scripted responses; the first exposition is "Exposition 1", and a mastery
+ * Check (FIRST_CHECK_QUESTION) is primed alongside it — see @/lib/checks —
+ * so callers that only need a Check pending can reveal it with a bare
+ * `postCheck()`, no further scripting required.
  */
 export async function reachLearning(): Promise<StateBody> {
   const started = await startInvestigatedSession();
@@ -90,7 +112,10 @@ export async function reachLearning(): Promise<StateBody> {
     }),
   );
   if (diag.status !== 200) throw new Error(`diagnostic failed: ${diag.status}`);
-  scriptModelResponse("Exposition 1");
+  scriptModelResponse(
+    "Exposition 1",
+    JSON.stringify({ question: FIRST_CHECK_QUESTION }),
+  );
   const adv = await postAdvanceRoute();
   if (adv.status !== 200) throw new Error(`advance failed: ${adv.status}`);
   return adv.json();

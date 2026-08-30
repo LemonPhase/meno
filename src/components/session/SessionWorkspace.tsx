@@ -121,6 +121,16 @@ export default function SessionWorkspace({
   // Sessions run concurrently, so every call says which one it is about.
   const target = sessionId ?? state.session?.id;
 
+  /** Take the server's word for where this Session is. */
+  async function refetch(): Promise<void> {
+    try {
+      const res = await fetch(sessionUrl(target));
+      if (res.ok) setState(await res.json());
+    } catch {
+      // Leave what we have; the next focus tries again.
+    }
+  }
+
   async function call(
     label: string,
     url: string,
@@ -144,6 +154,11 @@ export default function SessionWorkspace({
         // An error body isn't always JSON (a crashed route returns HTML),
         // so fall back to the status rather than throwing over the throw.
         const detail = await res.json().catch(() => null);
+        // Every 409 here means the same thing: this client is behind. Another
+        // tab moved the Session on, answered the Check, or passed the Concept
+        // whose lever we just pulled. Take the correction, so the control
+        // that failed goes away instead of failing again on the next press.
+        if (res.status === 409) await refetch();
         throw new Error(detail?.error ?? `${res.status} ${res.statusText}`);
       }
       setState(await res.json());

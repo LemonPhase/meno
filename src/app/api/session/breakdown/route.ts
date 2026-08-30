@@ -1,5 +1,6 @@
 import { breakDownConcept } from "@/ai/lesson";
 import { sessionIdFrom } from "@/lib/api";
+import { passedCheck } from "@/lib/checks";
 import {
   appendLessonMessages,
   formatEditContext,
@@ -35,6 +36,17 @@ export async function POST(request?: Request) {
   }
 
   const concept = state.concepts.find((c) => c.id === session.activeConceptId)!;
+  // "Too hard" is not something a passed Concept can be. Splicing a
+  // prerequisite in front of one the learner has just demonstrated teaches
+  // them the foundations of something they already hold — and the request
+  // can only come from a client that has not seen the pass yet, which is a
+  // stale client, not a learner asking. Test me is refused here too.
+  if (passedCheck(state.checks, concept.id)) {
+    return Response.json(
+      { error: "this Concept's mastery Check is already passed" },
+      { status: 409 },
+    );
+  }
   const lesson = state.lessons.find(
     (l) => l.conceptId === session.activeConceptId,
   )!;

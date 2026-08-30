@@ -76,7 +76,11 @@ export function conceptQuestion(
   checks: Check[],
   conceptId: string,
 ): string | undefined {
-  return checks.find(
-    (c) => c.phase === "mastery" && c.conceptIds.includes(conceptId),
-  )?.question;
+  // Newest wins. Every Check on a Concept taught under this flow carries the
+  // same question, so order is moot — but a Lesson from when the question was
+  // rewritten each turn holds several, and the one to re-ask is the last one
+  // the learner actually faced.
+  return checks
+    .filter((c) => c.phase === "mastery" && c.conceptIds.includes(conceptId))
+    .sort((a, b) => b.createdAt - a.createdAt)[0]?.question;
 }

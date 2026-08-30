@@ -26,7 +26,7 @@ const sessionUrl = (id?: string) =>
   id ? `/api/session?session=${encodeURIComponent(id)}` : "/api/session";
 
 const THINKING: Record<string, string> = {
-  chat: "Meno is thinking",
+  chat: "The tutor is thinking",
   answer: "Reading your answer",
   check: "Writing a check",
   advance: "Preparing the first lesson",
@@ -588,7 +588,7 @@ function Learning({
                 <button
                   className="hint-act"
                   disabled={!!busy}
-                  title="Meno finds the prerequisite you are missing and teaches that first, as a short detour before this concept. The concept itself stays as it is."
+                  title="The tutor finds the prerequisite you are missing and teaches that first, as a short detour before this concept. The concept itself stays as it is."
                   onClick={() => call("breakdown", "/api/session/breakdown")}
                 >
                   Break it down

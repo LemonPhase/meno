@@ -38,6 +38,27 @@ rather than something clever eventually.
   the real model when you are testing the agent's *behaviour* — prompts and
   their output — which the scripted fake cannot tell you anything about.
 
+- **This project is being submitted to the All Things Agentic Hackathon
+  (Devpost).** Meno is not just a product — it is a competition entry, and
+  the stack and deliverables are judged against the hackathon rules at
+  <https://allthingsagentichackathon.devpost.com/>. Consequences:
+  - We are entering **Track 2, The Collaborative Partner**: the agent leads
+    and takes notes — asks clarifying questions, guides the user step by
+    step, and captures feedback so it adapts to the user's way of thinking.
+    Keep features pointed at that track.
+  - Stack is locked: every feature must use Gemini 3.5 or newer (Gemini API
+    or Vertex AI), at least one Google agent framework (ADK, GenAI SDK,
+    Antigravity SDK, or GenKit), and at least one Google Cloud
+    infrastructure service (Cloud Run, Firestore, Pub/Sub, etc.). Don't
+    reach for non-Google model/provider dependencies without flagging that
+    they break the rules.
+  - Judging is 40% operational utility (autonomous action, not chat),
+    30% architectural discipline, 30% demo/production readiness. Keep the
+    repo in a state that supports a live demo video, an architecture
+    diagram, and reproducible spin-up instructions in the README.
+  Keep this out of user-facing documentation (README, CONTEXT.md, docs/) —
+  it is context for the build, not for readers of the repo.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know

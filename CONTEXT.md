@@ -52,7 +52,7 @@ Whether a Concept was part of the upfront Path preview (planned) or inserted mid
 The prerequisite relationship between Concepts, pointing from a Concept to the Concepts it requires (e.g. Attention requires Softmax). Produced by investigating the Topic (a small DAG), then linearized into the Path. Deleting a Concept removes it from any dependents' `requires` — no cascade, no block.
 
 **Edit**:
-A recorded, user-made change to a Concept in their Graph (rename or delete). Deleting prunes the Concept from every Session's Path — but a Concept currently Active in any in-progress Session cannot be deleted. During a Lesson the Session view offers no direct Concept editing; the user's levers there are Test me and Break it down. Stored append-only and surfaced to the agent as context for future Graph updates.
+A recorded, user-made change to a Concept in their Graph (rename or delete). Deleting prunes the Concept from every Session's Path — but a Concept currently Active in any in-progress Session cannot be deleted. During a Lesson the Session view offers no direct Concept editing; the user's levers there are Test me and Break it down, both offered until the Concept's mastery Check is passed and neither after it. Stored append-only and surfaced to the agent as context for future Graph updates.
 _Avoid_: audit log entry, revision.
 
 **Adjustment**:

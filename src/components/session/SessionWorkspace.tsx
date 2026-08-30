@@ -570,10 +570,11 @@ function Learning({
             {pendingCheck ? (
               "Answer in your own words — you can attempt this as many times as you like."
             ) : passed ? (
-              // Break it down survives the pass. A pass can be generous
-              // about a thin answer, so "I passed and I am still lost" is a
-              // real place to be — and the detour is the only thing that
-              // answers it.
+              // Both levers are spent once the Check is passed: there is
+              // nothing left to be tested on, and a Concept the learner has
+              // demonstrated is not one to insert a prerequisite before.
+              // Questions still go in the composer; only the way out is
+              // offered here.
               <>
                 Passed ·{" "}
                 <button
@@ -583,15 +584,6 @@ function Learning({
                   onClick={() => call("next", "/api/session/advance")}
                 >
                   {onward} →
-                </button>{" "}
-                · Still lost?{" "}
-                <button
-                  className="hint-act"
-                  disabled={!!busy}
-                  title="Meno finds the prerequisite you are missing and teaches that first, as a short detour before this concept. The concept itself stays as it is."
-                  onClick={() => call("breakdown", "/api/session/breakdown")}
-                >
-                  Break it down
                 </button>
               </>
             ) : (

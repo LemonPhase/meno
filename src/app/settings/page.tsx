@@ -1,8 +1,9 @@
+import AccountSetting from "@/components/auth/AccountSetting";
 import ThemeSetting from "@/components/shell/ThemeSetting";
 
-// Settings v1 (by design decision): the reading theme, and — visible in
-// dev — which engine is answering. Nothing else until there is something
-// else worth setting.
+// Settings v1 (by design decision): the account, the reading theme, and —
+// visible in dev — which engine is answering. Nothing else until there is
+// something else worth setting.
 
 export default function SettingsPage() {
   const model = process.env.MENO_MODEL ?? "vertexai/gemini-3.5-flash";
@@ -14,6 +15,13 @@ export default function SettingsPage() {
       <h1 className="h-display">Settings</h1>
 
       <div style={{ marginTop: 34 }}>
+        <div className="setrow">
+          <span className="k">Account</span>
+          <div>
+            <AccountSetting />
+          </div>
+        </div>
+
         <div className="setrow">
           <span className="k">Reading theme</span>
           <div>

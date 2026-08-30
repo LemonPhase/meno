@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { db } from "./firebase-admin";
-import { DEMO_USER_ID } from "./constants";
 import type {
   Check,
   Concept,
@@ -18,14 +17,15 @@ import type { Investigation } from "@/ai/investigate";
 
 // Firestore layout (ADR-0002: the Graph is the durable per-user container;
 // ADR-0004: Path state belongs to the Session, not the Concept):
-//   graphs/{graphId}                    — one per user; graphId = user id
+//   graphs/{graphId}                    — one per user; graphId = the
+//                                         signed-in Firebase uid (lib/auth)
 //   graphs/{graphId}/concepts/{id}      — durable: label, requires, unlocked
 //   graphs/{graphId}/sessions/{id}      — carries conceptIds and the Path
 //   graphs/{graphId}/lessons/{sessionId__conceptId}
 //   graphs/{graphId}/checks/{id}
 //   graphs/{graphId}/edits/{id}
 
-export const graphRef = (graphId: string = DEMO_USER_ID) =>
+export const graphRef = (graphId: string) =>
   db.collection("graphs").doc(graphId);
 
 export const lessonKey = (sessionId: string, conceptId: string) =>
@@ -123,7 +123,7 @@ export function decorate(
 
 async function conceptsByIds(
   ids: string[],
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<Concept[]> {
   if (ids.length === 0) return [];
   const col = graphRef(graphId).collection("concepts");
@@ -131,9 +131,22 @@ async function conceptsByIds(
   return docs.filter((d) => d.exists).map((d) => asConcept(d.data()!));
 }
 
+/**
+ * One Concept by id, or null. A direct document read: finding it through
+ * getGraphOverview would pull every Session, Check, Edit and Lesson in the
+ * Graph to answer a question about one document.
+ */
+export async function conceptById(
+  id: string,
+  graphId: string,
+): Promise<Concept | null> {
+  const doc = await graphRef(graphId).collection("concepts").doc(id).get();
+  return doc.exists ? asConcept(doc.data()!) : null;
+}
+
 export async function createSession(
   topic: string,
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<Session> {
   const session: Session = {
     id: randomUUID(),
@@ -161,7 +174,7 @@ export async function createSession(
 export async function saveInvestigation(
   session: Session,
   investigation: Investigation,
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<{ session: Session; concepts: SessionConcept[] }> {
   const graph = graphRef(graphId);
   const now = Date.now();
@@ -244,7 +257,7 @@ export async function saveInvestigation(
 export async function saveDiagnosticChecks(
   sessionId: string,
   questions: { conceptKeys: string[]; question: string }[],
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<Check[]> {
   const now = Date.now();
   const checks: Check[] = questions.map((q, i) => ({
@@ -266,7 +279,7 @@ export async function saveDiagnosticChecks(
 
 export async function getChecks(
   sessionId: string,
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<Check[]> {
   const snap = await graphRef(graphId)
     .collection("checks")
@@ -327,7 +340,7 @@ export async function applyDiagnosis(
   session: Session,
   knownConceptIds: string[],
   answers: { checkId: string; answer: string }[],
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<void> {
   const graph = graphRef(graphId);
   const concepts = await conceptsByIds(session.conceptIds, graphId);
@@ -400,7 +413,7 @@ export async function activateConcept(
   conceptId: string,
   exposition: string,
   question: string,
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<boolean> {
   const graph = graphRef(graphId);
   const sessionRef = graph.collection("sessions").doc(session.id);
@@ -441,8 +454,8 @@ export async function appendLessonMessages(
   sessionId: string,
   conceptId: string,
   messages: LessonMessage[],
-  onceForCheckId?: string,
-  graphId: string = DEMO_USER_ID,
+  onceForCheckId: string | undefined,
+  graphId: string,
 ): Promise<boolean> {
   const lessons = graphRef(graphId).collection("lessons");
   const ref = lessons.doc(lessonKey(sessionId, conceptId));
@@ -483,7 +496,7 @@ export async function saveMasteryCheck(
   sessionId: string,
   conceptId: string,
   question: string,
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<Check> {
   const check = masteryCheck(sessionId, conceptId, question);
   await graphRef(graphId).collection("checks").doc(check.id).set(check);
@@ -502,7 +515,7 @@ export async function claimCheckResult(
   checkId: string,
   answer: string,
   verdict: "pass" | "fail",
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<boolean> {
   const ref = graphRef(graphId).collection("checks").doc(checkId);
   return db.runTransaction(async (tx) => {
@@ -556,7 +569,7 @@ export async function spliceRemedialConcept(
   active: Concept,
   concepts: Concept[],
   remedial: { label: string; summary: string },
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<Concept> {
   const graph = graphRef(graphId);
 
@@ -603,7 +616,7 @@ export async function spliceRemedialConcept(
 export async function skipNextConcept(
   session: Session,
   concepts: Concept[],
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<Concept | null> {
   const next = nextLockedConcept(session, concepts);
   if (!next) return null;
@@ -623,7 +636,7 @@ export async function completeSession(
   session: Session,
   from: string | null,
   recap: string,
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<boolean> {
   const graph = graphRef(graphId);
   const sessionRef = graph.collection("sessions").doc(session.id);
@@ -645,7 +658,7 @@ export async function completeSession(
 
 export async function getLessons(
   sessionId: string,
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<Lesson[]> {
   const snap = await graphRef(graphId)
     .collection("lessons")
@@ -661,7 +674,7 @@ export async function getLessons(
 export async function renameConcept(
   concept: Concept,
   label: string,
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<void> {
   const graph = graphRef(graphId);
   const edit: Edit = {
@@ -685,7 +698,7 @@ export async function renameConcept(
  */
 export async function sessionsLearning(
   conceptId: string,
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<Session[]> {
   const snap = await graphRef(graphId)
     .collection("sessions")
@@ -703,7 +716,7 @@ export async function sessionsLearning(
  */
 export async function deleteConcept(
   concept: Concept,
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<void> {
   const graph = graphRef(graphId);
   const [conceptDocs, allConceptDocs, sessionDocs, lessonDocs, checkDocs] =
@@ -769,7 +782,7 @@ export async function deleteConcept(
 
 /** Recent Edits, newest first — the context future agent calls receive. */
 export async function getRecentEdits(
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
   limit = 20,
 ): Promise<Edit[]> {
   const snap = await graphRef(graphId)
@@ -797,7 +810,7 @@ ${lines.join("\n")}`;
  * progress, else the most recent of all (its record).
  */
 export async function latestSessionId(
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<string | null> {
   const snap = await graphRef(graphId)
     .collection("sessions")
@@ -813,8 +826,8 @@ export async function latestSessionId(
  * from. Without an id, the Session the app opens on.
  */
 export async function getSessionState(
-  sessionId?: string,
-  graphId: string = DEMO_USER_ID,
+  sessionId: string | undefined,
+  graphId: string,
 ): Promise<SessionState> {
   const id = sessionId ?? (await latestSessionId(graphId));
   if (!id) return { session: null, concepts: [], checks: [], lessons: [] };
@@ -852,7 +865,7 @@ export async function getSessionState(
 
 /** All Sessions newest-first with Path progress — the sidebar's data. */
 export async function listSessions(
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<SessionSummary[]> {
   const graph = graphRef(graphId);
   const [sessionSnap, conceptSnap] = await Promise.all([
@@ -895,7 +908,7 @@ export async function listSessions(
  * Checks, Edits and Lessons — what the Graph and Progress destinations
  * render. Small by construction (one user's accumulated learning).
  */
-export async function getGraphOverview(graphId: string = DEMO_USER_ID): Promise<{
+export async function getGraphOverview(graphId: string): Promise<{
   concepts: SessionConcept[];
   sessions: Session[];
   checks: Check[];
@@ -957,7 +970,7 @@ export async function getGraphOverview(graphId: string = DEMO_USER_ID): Promise<
 /** One Session's full record — what the read-only archive view renders. */
 export async function getSessionRecord(
   sessionId: string,
-  graphId: string = DEMO_USER_ID,
+  graphId: string,
 ): Promise<SessionState | null> {
   const state = await getSessionState(sessionId, graphId);
   return state.session ? state : null;

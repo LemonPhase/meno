@@ -12,6 +12,8 @@ import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import type { Edit } from "@/lib/types";
 import {
+  USER,
+  authed,
   EXTRACTION,
   RESEARCH_NOTES,
   diagnosticQuestionsResponder,
@@ -27,7 +29,7 @@ import { POST as postSession } from "@/app/api/session/route";
 
 beforeEach(async () => {
   clearScriptedResponses();
-  await db.recursiveDelete(graphRef());
+  await db.recursiveDelete(graphRef(USER));
 });
 
 const byLabel = (s: StateBody, label: string) =>
@@ -36,7 +38,7 @@ const byLabel = (s: StateBody, label: string) =>
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 
 async function storedEdits(): Promise<Edit[]> {
-  const snap = await graphRef().collection("edits").get();
+  const snap = await graphRef(USER).collection("edits").get();
   return snap.docs
     .map((d) => d.data() as Edit)
     .sort((a, b) => a.createdAt - b.createdAt);
@@ -108,7 +110,7 @@ describe("DELETE /api/concepts/[id]", () => {
     const state = await reachLearning();
     const softmax = byLabel(state, "Softmax");
     const res = await DELETE(
-      new Request(`http://test/api/concepts/${softmax.id}`, {
+      authed(`/api/concepts/${softmax.id}`, {
         method: "DELETE",
       }),
       ctx(softmax.id),
@@ -138,7 +140,7 @@ describe("DELETE /api/concepts/[id]", () => {
     // about Softmax, so it goes; the others stay untouched.
     const state = await reachLearning();
     const softmax = byLabel(state, "Softmax");
-    const before = await graphRef().collection("checks").get();
+    const before = await graphRef(USER).collection("checks").get();
     expect(
       before.docs.filter((d) =>
         (d.data().conceptIds as string[]).includes(softmax.id),
@@ -146,13 +148,13 @@ describe("DELETE /api/concepts/[id]", () => {
     ).not.toHaveLength(0);
 
     await DELETE(
-      new Request(`http://test/api/concepts/${softmax.id}`, {
+      authed(`/api/concepts/${softmax.id}`, {
         method: "DELETE",
       }),
       ctx(softmax.id),
     );
 
-    const after = await graphRef().collection("checks").get();
+    const after = await graphRef(USER).collection("checks").get();
     // Nothing anywhere still points at a Concept that is gone…
     for (const doc of after.docs) {
       expect(doc.data().conceptIds).not.toContain(softmax.id);
@@ -171,7 +173,7 @@ describe("DELETE /api/concepts/[id]", () => {
     const attention = byLabel(state, "Attention");
     // A diagnostic Check may name several Concepts for one question; it is
     // about the others too, so it outlives any one of them.
-    await graphRef().collection("checks").doc("spanning").set({
+    await graphRef(USER).collection("checks").doc("spanning").set({
       id: "spanning",
       sessionId: state.session.id,
       phase: "diagnostic",
@@ -183,13 +185,13 @@ describe("DELETE /api/concepts/[id]", () => {
     });
 
     await DELETE(
-      new Request(`http://test/api/concepts/${softmax.id}`, {
+      authed(`/api/concepts/${softmax.id}`, {
         method: "DELETE",
       }),
       ctx(softmax.id),
     );
 
-    const kept = await graphRef().collection("checks").doc("spanning").get();
+    const kept = await graphRef(USER).collection("checks").doc("spanning").get();
     expect(kept.exists).toBe(true);
     expect(kept.data()!.conceptIds).toEqual([attention.id]);
   });
@@ -199,7 +201,7 @@ describe("DELETE /api/concepts/[id]", () => {
     const active = byLabel(state, "Dot product");
 
     const res = await DELETE(
-      new Request(`http://test/api/concepts/${active.id}`, {
+      authed(`/api/concepts/${active.id}`, {
         method: "DELETE",
       }),
       ctx(active.id),
@@ -210,9 +212,9 @@ describe("DELETE /api/concepts/[id]", () => {
     expect(res.status).toBe(409);
     expect((await res.json()).error).toContain("being learned");
 
-    const still = await graphRef().collection("concepts").doc(active.id).get();
+    const still = await graphRef(USER).collection("concepts").doc(active.id).get();
     expect(still.exists).toBe(true);
-    const edits = await graphRef().collection("edits").get();
+    const edits = await graphRef(USER).collection("edits").get();
     expect(edits.size).toBe(0);
   });
 
@@ -221,12 +223,12 @@ describe("DELETE /api/concepts/[id]", () => {
     for (const label of ["Softmax", "Attention"]) {
       const c = byLabel(state, label);
       await DELETE(
-        new Request(`http://test/api/concepts/${c.id}`, { method: "DELETE" }),
+        authed(`/api/concepts/${c.id}`, { method: "DELETE" }),
         ctx(c.id),
       );
     }
 
-    const after: StateBody = await (await GET()).json();
+    const after: StateBody = await (await GET(authed("/api/session"))).json();
     const active = byLabel(state, "Dot product");
     expect(after.concepts.map((c) => c.id)).toEqual([active.id]);
     expect(after.session.path.map((e) => e.conceptId)).toEqual([active.id]);
@@ -244,7 +246,7 @@ describe("Edits reach later agent calls as context", () => {
       ctx(softmax.id),
     );
 
-    await postCheck(); // already primed alongside reachLearning()'s advance
+    await postCheck(authed("/api/session/check")); // already primed alongside reachLearning()'s advance
 
     let gradingPrompt = "";
     scriptModelResponse(
@@ -265,7 +267,7 @@ describe("Edits reach later agent calls as context", () => {
     const state = await reachLearning();
     const attention = byLabel(state, "Attention");
     await DELETE(
-      new Request(`http://test/api/concepts/${attention.id}`, {
+      authed(`/api/concepts/${attention.id}`, {
         method: "DELETE",
       }),
       ctx(attention.id),

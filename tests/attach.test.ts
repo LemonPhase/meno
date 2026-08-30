@@ -6,6 +6,8 @@ import { POST as postAdvance } from "@/app/api/session/advance/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import {
+  USER,
+  authed,
   jsonRequest,
   passAndMoveOn,
   reachLearning,
@@ -20,16 +22,16 @@ import {
 
 beforeEach(async () => {
   clearScriptedResponses();
-  await db.recursiveDelete(graphRef());
+  await db.recursiveDelete(graphRef(USER));
 });
 
 const stateOf = async (sessionId: string): Promise<StateBody> =>
-  (await GET(new Request(`http://test/api/session?session=${sessionId}`))).json();
+  (await GET(authed(`/api/session?session=${sessionId}`))).json();
 const byLabel = (s: StateBody, label: string) =>
   s.concepts.find((c) => c.label === label)!;
 
 async function graphSize() {
-  return (await graphRef().collection("concepts").get()).size;
+  return (await graphRef(USER).collection("concepts").get()).size;
 }
 
 describe("Attach", () => {
@@ -109,7 +111,7 @@ describe("Attach", () => {
     );
     scriptModelResponse("B softmax", JSON.stringify({ question: "B softmax?" }));
     await postAdvance(
-      new Request(`http://test/api/session/advance?session=${bId}`, {
+      authed(`/api/session/advance?session=${bId}`, {
         method: "POST",
       }),
     );
@@ -163,7 +165,7 @@ describe("Attach", () => {
       JSON.stringify({ question: "Q1?" }),
     );
     await postAdvance(
-      new Request(`http://test/api/session/advance?session=${first.session.id}`, {
+      authed(`/api/session/advance?session=${first.session.id}`, {
         method: "POST",
       }),
     );
@@ -182,7 +184,7 @@ describe("Attach", () => {
     // …and the second Session now shows it as already yours.
     const secondNow: StateBody = await (
       await GET(
-        new Request(`http://test/api/session?session=${second.session.id}`),
+        authed(`/api/session?session=${second.session.id}`),
       )
     ).json();
     expect(byLabel(secondNow, "Softmax").status).toBe("unlocked");

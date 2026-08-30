@@ -1,0 +1,14 @@
+rules_version = '2';
+
+// Nothing reaches Firestore from a browser: the app's only client is the
+// Admin SDK inside the Next.js route handlers, which bypasses rules and
+// enforces ownership by path instead (ADR-0005, graphs/{uid}). So the rules
+// exist to say that plainly — any direct client access is a bug, and this
+// makes it fail rather than read someone's Graph.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

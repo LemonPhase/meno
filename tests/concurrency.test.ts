@@ -15,6 +15,8 @@ import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import type { SessionSummary } from "@/lib/types";
 import {
+  USER,
+  authed,
   jsonRequest,
   startInvestigatedSession,
   startOverlappingSession,
@@ -26,7 +28,7 @@ import {
 
 beforeEach(async () => {
   clearScriptedResponses();
-  await db.recursiveDelete(graphRef());
+  await db.recursiveDelete(graphRef(USER));
 });
 
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
@@ -42,7 +44,7 @@ async function intoLearning(sessionId: string, checks: { id: string }[]) {
   );
   scriptModelResponse("First exposition", JSON.stringify({ question: "Q?" }));
   await postAdvance(
-    new Request(`http://test/api/session/advance?session=${sessionId}`, {
+    authed(`/api/session/advance?session=${sessionId}`, {
       method: "POST",
     }),
   );
@@ -56,10 +58,10 @@ describe("Concurrent Sessions", () => {
     await intoLearning(second.session.id, second.checks);
 
     const a: StateBody = await (
-      await getSession(new Request("http://test"), ctx(first.session.id))
+      await getSession(authed("/"), ctx(first.session.id))
     ).json();
     const b: StateBody = await (
-      await getSession(new Request("http://test"), ctx(second.session.id))
+      await getSession(authed("/"), ctx(second.session.id))
     ).json();
 
     expect(a.session.phase).toBe("learning");
@@ -76,7 +78,7 @@ describe("Concurrent Sessions", () => {
     await intoLearning(second.session.id, second.checks);
 
     const before: StateBody = await (
-      await getSession(new Request("http://test"), ctx(first.session.id))
+      await getSession(authed("/"), ctx(first.session.id))
     ).json();
 
     scriptModelResponse(
@@ -91,7 +93,7 @@ describe("Concurrent Sessions", () => {
     );
 
     const after: StateBody = await (
-      await getSession(new Request("http://test"), ctx(first.session.id))
+      await getSession(authed("/"), ctx(first.session.id))
     ).json();
     expect(after.lessons).toEqual(before.lessons);
     expect(after.session).toEqual(before.session);
@@ -102,7 +104,7 @@ describe("Concurrent Sessions", () => {
     await intoLearning(first.session.id, first.checks);
     const second = await startOverlappingSession();
 
-    const landing: StateBody = await (await GET()).json();
+    const landing: StateBody = await (await GET(authed("/api/session"))).json();
     expect(landing.session.id).toBe(second.session.id);
   });
 
@@ -114,7 +116,7 @@ describe("Concurrent Sessions", () => {
 
     // "Test me" is sent with the viewed Session in the body, not the URL.
     const firstState: StateBody = await (
-      await getSession(new Request("http://test"), ctx(first.session.id))
+      await getSession(authed("/"), ctx(first.session.id))
     ).json();
 
     // Already primed alongside intoLearning()'s advance — no script needed.
@@ -140,10 +142,7 @@ describe("Concurrent Sessions", () => {
 
     const doomed = first.concepts.find((c) => c.status !== "active")!;
     const res = await deleteConcept(
-      new Request(
-        `http://test/api/concepts/${doomed.id}?session=${first.session.id}`,
-        { method: "DELETE" },
-      ),
+      authed(`/api/concepts/${doomed.id}?session=${first.session.id}`, { method: "DELETE" }),
       { params: Promise.resolve({ id: doomed.id }) },
     );
     expect(res.status).toBe(200);
@@ -181,7 +180,7 @@ describe("Concurrent Sessions", () => {
     const second = await startOverlappingSession();
 
     const { sessions }: { sessions: SessionSummary[] } = await (
-      await getSessions()
+      await getSessions(authed("/api/sessions"))
     ).json();
     expect(sessions.map((s) => s.id)).toEqual([
       second.session.id,

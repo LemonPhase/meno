@@ -1,5 +1,6 @@
 import { generateMasteryCheck } from "@/ai/lesson";
 import { sessionIdFrom } from "@/lib/api";
+import { graphIdFrom, unauthorized } from "@/lib/auth";
 import {
   conceptQuestion,
   passedCheck,
@@ -22,16 +23,17 @@ import {
  * has none — a Lesson from before Checks were primed, or one whose primed
  * Check was lost.
  */
-export async function POST(request?: Request) {
+export async function POST(request: Request) {
+  const graphId = await graphIdFrom(request);
+  if (!graphId) return unauthorized();
+
   let body: Record<string, unknown> = {};
-  if (request) {
-    try {
-      body = await request.json();
-    } catch {
-      body = {};
-    }
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
   }
-  const state = await getSessionState(sessionIdFrom(request, body));
+  const state = await getSessionState(sessionIdFrom(request, body), graphId);
   const { session } = state;
   if (!session || session.phase !== "learning" || !session.activeConceptId) {
     return Response.json(
@@ -75,7 +77,7 @@ export async function POST(request?: Request) {
           },
         })
       ).question;
-    check = await saveMasteryCheck(session.id, concept.id, question);
+    check = await saveMasteryCheck(session.id, concept.id, question, graphId);
   }
 
   await appendLessonMessages(
@@ -83,7 +85,8 @@ export async function POST(request?: Request) {
     concept.id,
     [lessonMessage("check-question", check.question, check.id)],
     check.id,
+    graphId,
   );
 
-  return Response.json(await getSessionState(session.id));
+  return Response.json(await getSessionState(session.id, graphId));
 }

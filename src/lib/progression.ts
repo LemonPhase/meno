@@ -19,6 +19,7 @@ export async function advanceToNextConcept(
   session: Session,
   concepts: Concept[],
   from: string | null,
+  graphId: string,
 ): Promise<boolean> {
   const next = nextLockedConcept(session, concepts);
   // `from` is Unlocked by this move, in the commit below — it is still
@@ -45,7 +46,14 @@ export async function advanceToNextConcept(
     // Both model calls land before anything is written, and the writes go
     // in as one guarded commit: a failure here leaves the Session exactly
     // where it stood, with the move still to make.
-    return activateConcept(session, from, next.id, exposition, question);
+    return activateConcept(
+      session,
+      from,
+      next.id,
+      exposition,
+      question,
+      graphId,
+    );
   } else {
     const onPath = new Map(session.path.map((e, i) => [e.conceptId, { i, e }]));
     const { recap } = await writeRecap({
@@ -62,6 +70,6 @@ export async function advanceToNextConcept(
           origin: onPath.get(c.id)?.e.origin ?? "planned",
         })),
     });
-    return completeSession(session, from, recap);
+    return completeSession(session, from, recap, graphId);
   }
 }

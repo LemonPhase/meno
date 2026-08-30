@@ -1,4 +1,5 @@
 import { promptText, scriptModelResponse } from "@/ai/scripted";
+import { SESSION_COOKIE } from "@/lib/auth";
 import { POST as postSessionRoute } from "@/app/api/session/route";
 import { POST as postDiagnosticRoute } from "@/app/api/session/diagnostic/route";
 import { POST as postAdvanceRoute } from "@/app/api/session/advance/route";
@@ -29,11 +30,38 @@ export function pendingCheck(s: StateBody): Check | undefined {
     : undefined;
 }
 
-export function jsonRequest(url: string, body: unknown): Request {
+/**
+ * The signed-in reader. MENO_AUTH=scripted (vitest.config.ts) takes the
+ * session cookie at face value as the uid, so a test signs in simply by
+ * naming one — and a second name is a second Graph, which is how the
+ * scoping tests get two users without a Firebase Auth project.
+ */
+export const USER = "test-reader";
+export const OTHER = "test-stranger";
+
+const signedIn = (uid: string) => ({ Cookie: `${SESSION_COOKIE}=${uid}` });
+
+export function jsonRequest(
+  url: string,
+  body: unknown,
+  uid: string = USER,
+): Request {
   return new Request(`http://test${url}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...signedIn(uid) },
     body: JSON.stringify(body),
+  });
+}
+
+/** A bodiless request carrying `uid`'s session cookie. */
+export function authed(
+  url: string,
+  init: RequestInit & { uid?: string } = {},
+): Request {
+  const { uid = USER, headers, ...rest } = init;
+  return new Request(`http://test${url}`, {
+    ...rest,
+    headers: { ...headers, ...signedIn(uid) },
   });
 }
 
@@ -118,7 +146,7 @@ export async function reachLearning(): Promise<StateBody> {
     "Exposition 1",
     JSON.stringify({ question: FIRST_CHECK_QUESTION }),
   );
-  const adv = await postAdvanceRoute();
+  const adv = await postAdvanceRoute(authed("/api/session/advance"));
   if (adv.status !== 200) throw new Error(`advance failed: ${adv.status}`);
   return adv.json();
 }
@@ -180,11 +208,9 @@ export async function passAndMoveOn(
 ): Promise<StateBody> {
   const { grade = {}, sessionId } = opts;
   const scoped = (path: string) =>
-    sessionId
-      ? new Request(`http://test${path}?session=${sessionId}`, {
-          method: "POST",
-        })
-      : undefined;
+    authed(sessionId ? `${path}?session=${sessionId}` : path, {
+      method: "POST",
+    });
 
   // Whatever is Active already has its Check primed, so revealing is free.
   await postCheckRoute(scoped("/api/session/check"));

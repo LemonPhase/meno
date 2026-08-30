@@ -46,7 +46,10 @@ jobs:
         run: |
           gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
           IMAGE="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/meno/meno:${{ github.sha }}"
-          docker build -t "$IMAGE" .
+          docker build -t "$IMAGE" \
+            --build-arg NEXT_PUBLIC_FIREBASE_API_KEY="${{ vars.NEXT_PUBLIC_FIREBASE_API_KEY }}" \
+            --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="${{ vars.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}" \
+            .
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
@@ -67,4 +70,7 @@ jobs:
             --region "${{ vars.GCP_REGION }}" \
             --format "value(status.url)")
           echo "Service URL: $URL"
-          curl -sf "$URL/api/session" > /dev/null
+          # Every Graph route is 401 to a signed-out caller now, so the
+          # check that proves the service is up is the one that answers
+          # without a session: it must say nobody is reading.
+          test "$(curl -sf "$URL/api/auth/session")" = '{"viewer":null}'

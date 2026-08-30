@@ -5,6 +5,7 @@ import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import type { SessionConcept } from "@/lib/types";
 import {
+  USER,
   jsonRequest,
   startInvestigatedSession,
   type StateBody,
@@ -12,7 +13,7 @@ import {
 
 beforeEach(async () => {
   clearScriptedResponses();
-  await db.recursiveDelete(graphRef());
+  await db.recursiveDelete(graphRef(USER));
 });
 
 function answersFor(state: StateBody) {

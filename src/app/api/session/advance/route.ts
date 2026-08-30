@@ -1,4 +1,5 @@
 import { sessionIdFrom } from "@/lib/api";
+import { graphIdFrom, unauthorized } from "@/lib/auth";
 import { passedCheck } from "@/lib/checks";
 import { advanceToNextConcept } from "@/lib/progression";
 import { getSessionState } from "@/lib/store";
@@ -12,26 +13,29 @@ import { getSessionState } from "@/lib/store";
  * still want to ask, and leaves when they are ready; the Unlock happens
  * here, on the way out.
  */
-export async function POST(request?: Request) {
+export async function POST(request: Request) {
+  const graphId = await graphIdFrom(request);
+  if (!graphId) return unauthorized();
+
   let body: Record<string, unknown> = {};
-  if (request) {
-    try {
-      body = await request.json();
-    } catch {
-      body = {};
-    }
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
   }
-  const state = await getSessionState(sessionIdFrom(request, body));
+  const state = await getSessionState(sessionIdFrom(request, body), graphId);
   const { session } = state;
 
   if (session?.phase === "previewing") {
-    if (!(await advanceToNextConcept(session, state.concepts, null))) {
+    if (
+      !(await advanceToNextConcept(session, state.concepts, null, graphId))
+    ) {
       return Response.json(
         { error: "this Session has already started Learning" },
         { status: 409 },
       );
     }
-    return Response.json(await getSessionState(session.id));
+    return Response.json(await getSessionState(session.id, graphId));
   }
 
   if (session?.phase === "learning" && session.activeConceptId) {
@@ -48,6 +52,7 @@ export async function POST(request?: Request) {
       session,
       state.concepts,
       session.activeConceptId,
+      graphId,
     );
     if (!moved) {
       return Response.json(
@@ -55,7 +60,7 @@ export async function POST(request?: Request) {
         { status: 409 },
       );
     }
-    return Response.json(await getSessionState(session.id));
+    return Response.json(await getSessionState(session.id, graphId));
   }
 
   return Response.json(

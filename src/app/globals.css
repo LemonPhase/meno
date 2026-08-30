@@ -172,6 +172,15 @@ a { color: inherit; text-decoration: none; }
 .snav a:hover .glyph { color: var(--ink2); }
 .snav a.on .glyph { color: var(--lapis-ink); }
 
+.account {
+  border-top: 1px solid var(--rule); margin-top: 14px; padding-top: 13px;
+  display: flex; align-items: baseline; gap: 12px;
+}
+.account .who {
+  flex: 1; min-width: 0; font-size: 13.5px; color: var(--ink2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 /* slim reopen control + mobile topbar */
 .side-toggle {
   position: fixed; left: 14px; top: 14px; z-index: 40;
@@ -562,6 +571,110 @@ a { color: inherit; text-decoration: none; }
 .setrow .k { font-size: 16px; }
 .setrow .d { color: var(--ink3); font-size: 14px; font-style: italic; line-height: 1.55; margin-top: 8px; }
 
+/* =================== landing =================== */
+/* The signed-out title page. Same materials as every other sheet — three
+   inks, hairlines, roman numerals — set as front matter rather than as a
+   pitch, so arriving at Meno already reads like reading it. */
+.landing { min-height: 100dvh; display: flex; flex-direction: column; }
+.landing-in { width: 100%; max-width: 1120px; margin-inline: auto; padding: 0 40px 80px; }
+
+.title-spread {
+  display: grid; grid-template-columns: minmax(0, 1fr) 346px;
+  gap: 68px; align-items: center; padding: 8vh 0 6vh;
+}
+.masthead { max-width: 56ch; }
+.brand-display {
+  font-size: clamp(56px, 8vw, 88px); line-height: 1; font-weight: 400;
+  letter-spacing: -0.022em; margin: 4px 0 2px;
+}
+.masthead .lede { margin-top: 18px; max-width: 50ch; }
+
+.epigraph { border-left: 2px solid var(--rule); padding-left: 18px; margin: 30px 0 32px; }
+.epigraph p { font-style: italic; font-size: 17px; line-height: 1.66; color: var(--ink2); max-width: 46ch; }
+.epigraph .attr { display: block; margin-top: 10px; color: var(--ink3); }
+
+/* — auth — Meno has no filled buttons; the one action on the page earns
+   a card rather than a stack of hairlines. Same paper, rule and shadow
+   as every other sheet; Google's mark is the only colour not in the palette. */
+.gbtn {
+  display: inline-flex; align-items: center; gap: 11px;
+  border: 1px solid var(--ink); background: var(--sheet);
+  padding: 11px 20px; color: var(--ink); font-size: 16px; line-height: 1.4;
+  transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease;
+}
+.gbtn:hover:not(:disabled) { border-color: var(--lapis); color: var(--lapis-ink); }
+.gbtn:disabled { border-color: var(--rule); color: var(--ink3); cursor: default; }
+.gbtn .mark { width: 17px; height: 17px; display: block; flex: none; }
+.signin-err { color: var(--rubric-ink); font-size: 13.5px; font-style: italic; margin-top: 10px; line-height: 1.5; }
+/* Auth is secondary to the plate: same rule language, no shadow,
+   so the graph's sheet+shadow stays the one elevated figure. */
+.auth-card {
+  border: 1px solid var(--rule2); background: transparent;
+  padding: 18px 18px 14px; max-width: 332px;
+}
+.auth-card .gbtn { width: 100%; justify-content: center; }
+/* Google is secondary — paper-quiet, sheet only on hover */
+.auth-card > div > .gbtn { background: transparent; border-color: var(--rule); color: var(--ink2); }
+.auth-card > div > .gbtn:hover:not(:disabled) { background: var(--sheet); border-color: var(--ink3); color: var(--ink); }
+.email-signin { display: flex; flex-direction: column; gap: 12px; }
+.email-signin .field { display: flex; flex-direction: column; gap: 6px; }
+.email-signin .field .sc { color: var(--ink3); font-size: 9px; letter-spacing: 0.18em; }
+.email-signin .field input {
+  border: 1px solid var(--rule2); background: var(--sheet);
+  padding: 10px 12px; color: var(--ink); font-size: 15px; line-height: 1.4;
+  width: 100%; border-radius: 2px;
+  transition: border-color 0.18s ease;
+}
+.email-signin .field input::placeholder { color: var(--ink3); opacity: 0.6; }
+.email-signin .field input:focus { outline: none; border-color: var(--ink3); background: var(--sheet); }
+.email-signin .field input:-webkit-autofill,
+.email-signin .field input:-webkit-autofill:hover,
+.email-signin .field input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--sheet) inset;
+  -webkit-text-fill-color: var(--ink);
+}
+.auth-divider {
+  display: flex; align-items: center; gap: 12px;
+  color: var(--ink3); margin: 16px 0 16px;
+}
+.auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+.auth-divider span { font-size: 10px; }
+.auth-card .fine {
+  color: var(--ink3); font-size: 13px; font-style: italic;
+  line-height: 1.55; margin-top: 14px;
+}
+.plate { margin: 0; }
+.plate .graphwrap { max-width: none; }
+/* An illustration, not a control: no pointer, no hover affordance. */
+.plate .gnode { cursor: default; }
+.plate .gnode:hover .lbl { fill: var(--ink); }
+.plate .gnode.locked:hover .lbl { fill: var(--ink3); }
+.plate figcaption {
+  color: var(--ink3); font-size: 13px; font-style: italic;
+  line-height: 1.55; margin-top: 13px;
+}
+
+.method { padding-top: 8px; }
+.movements {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--ink); border-bottom: 1px solid var(--rule);
+}
+.movements li {
+  padding: 22px 24px 26px; border-left: 1px solid var(--rule2);
+}
+.movements li:first-child { border-left: 0; padding-left: 0; }
+.movements li:last-child { padding-right: 0; }
+.movements .n { color: var(--ink3); display: block; margin-bottom: 10px; }
+.movements h2 { font-size: 19px; font-weight: 400; line-height: 1.3; margin-bottom: 5px; }
+.movements p { font-size: 14.5px; line-height: 1.62; color: var(--ink2); }
+
+.closing { margin-top: 40px; max-width: 62ch; }
+.closing p { font-size: 16.5px; line-height: 1.7; color: var(--ink2); }
+.closing .colophon {
+  margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--rule2);
+  font-size: 13.5px; font-style: italic; color: var(--ink3);
+}
+
 /* =================== rendered markdown ===================
    The model writes markdown; it is rendered in the same voice as the
    surrounding prose — serif body, sans only for code and labels. No new
@@ -680,6 +793,15 @@ a { color: inherit; text-decoration: none; }
 }
 @keyframes slidein { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 
+@media (max-width: 980px) {
+  .title-spread { grid-template-columns: minmax(0, 1fr); gap: 44px; padding-top: 6vh; }
+  .plate { max-width: 400px; }
+  .movements { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .movements li:nth-child(odd) { border-left: 0; padding-left: 0; }
+  .movements li:nth-child(2) { padding-right: 0; }
+  .movements li:nth-child(3), .movements li:nth-child(4) { border-top: 1px solid var(--rule2); }
+}
+
 @media (max-width: 880px) {
   .shell { grid-template-columns: minmax(0, 1fr); }
   .side {
@@ -698,6 +820,17 @@ a { color: inherit; text-decoration: none; }
   .page { padding-top: 64px; }
   .speech { grid-template-columns: 40px minmax(0, 1fr); gap: 10px; }
   .setrow { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .landing-in { padding-left: 22px; padding-right: 22px; }
+}
+
+@media (max-width: 620px) {
+  .movements { grid-template-columns: minmax(0, 1fr); }
+  .movements li,
+  .movements li:nth-child(odd) {
+    border-left: 0; border-top: 1px solid var(--rule2);
+    padding: 20px 0 22px;
+  }
+  .movements li:first-child { border-top: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

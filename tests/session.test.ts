@@ -4,14 +4,19 @@ import { GET, POST } from "@/app/api/session/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import type { Concept } from "@/lib/types";
-import { jsonRequest, startInvestigatedSession } from "./helpers";
+import {
+  USER,
+  authed,
+  jsonRequest,
+  startInvestigatedSession,
+} from "./helpers";
 
 // Black-box tests over the server interface: call the route handlers the way
 // the browser would, then assert on the response and on what Firestore holds.
 
 beforeEach(async () => {
   clearScriptedResponses();
-  await db.recursiveDelete(graphRef());
+  await db.recursiveDelete(graphRef(USER));
 });
 
 describe("POST /api/session", () => {
@@ -23,7 +28,7 @@ describe("POST /api/session", () => {
     expect(body.concepts).toHaveLength(3);
 
     // Concepts land in the durable Graph, not just the response.
-    const stored = await graphRef().collection("concepts").get();
+    const stored = await graphRef(USER).collection("concepts").get();
     expect(stored.size).toBe(3);
     const byLabel = new Map(
       stored.docs.map((d) => [d.data().label, d.data() as Concept]),
@@ -86,7 +91,7 @@ describe("POST /api/session", () => {
 
 describe("GET /api/session", () => {
   it("returns empty state before any Session exists", async () => {
-    const body = await (await GET()).json();
+    const body = await (await GET(authed("/api/session"))).json();
     expect(body.session).toBeNull();
     expect(body.concepts).toEqual([]);
     expect(body.checks).toEqual([]);
@@ -95,7 +100,7 @@ describe("GET /api/session", () => {
   it("returns the latest Session with its Concepts and Checks", async () => {
     const created = await startInvestigatedSession();
 
-    const body = await (await GET()).json();
+    const body = await (await GET(authed("/api/session"))).json();
     expect(body.session.id).toBe(created.session.id);
     expect(body.session.phase).toBe("diagnosing");
     expect(body.concepts).toHaveLength(3);

@@ -5,6 +5,16 @@
 // So a Concept carries only durable facts, and Path membership, order and
 // origin live on the Session that is walking them.
 
+/**
+ * Who is reading. The uid is also their graphId — one Graph per user
+ * (CONTEXT.md), so identity and ownership are the same fact.
+ */
+export interface Viewer {
+  uid: string;
+  name: string | null;
+  email: string | null;
+}
+
 export type SessionPhase =
   | "investigating"
   | "diagnosing"

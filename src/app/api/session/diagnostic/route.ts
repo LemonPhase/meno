@@ -1,5 +1,6 @@
 import { gradeDiagnostic } from "@/ai/diagnose";
 import { sessionIdFrom } from "@/lib/api";
+import { graphIdFrom, unauthorized } from "@/lib/auth";
 import { applyDiagnosis, getSessionState } from "@/lib/store";
 
 /**
@@ -8,6 +9,9 @@ import { applyDiagnosis, getSessionState } from "@/lib/store";
  * the Path, and lands the Session in Previewing.
  */
 export async function POST(request: Request) {
+  const graphId = await graphIdFrom(request);
+  if (!graphId) return unauthorized();
+
   let body: Record<string, unknown>;
   try {
     body = await request.json();
@@ -27,7 +31,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const state = await getSessionState(sessionIdFrom(request, body));
+  const state = await getSessionState(sessionIdFrom(request, body), graphId);
   if (!state.session || state.session.phase !== "diagnosing") {
     return Response.json(
       { error: "no Session in the Diagnosing phase" },
@@ -57,6 +61,6 @@ export async function POST(request: Request) {
         })
       : { knownConceptIds: [] };
 
-  await applyDiagnosis(state.session, knownConceptIds, graded);
-  return Response.json(await getSessionState(state.session.id));
+  await applyDiagnosis(state.session, knownConceptIds, graded, graphId);
+  return Response.json(await getSessionState(state.session.id, graphId));
 }

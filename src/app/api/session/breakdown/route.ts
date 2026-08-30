@@ -1,5 +1,6 @@
 import { breakDownConcept } from "@/ai/lesson";
 import { sessionIdFrom } from "@/lib/api";
+import { graphIdFrom, unauthorized } from "@/lib/auth";
 import { passedCheck } from "@/lib/checks";
 import {
   appendLessonMessages,
@@ -16,17 +17,18 @@ import {
  * never restructured — or, when the transcript gives nothing to go on, with
  * a single question.
  */
-export async function POST(request?: Request) {
+export async function POST(request: Request) {
+  const graphId = await graphIdFrom(request);
+  if (!graphId) return unauthorized();
+
   let body: Record<string, unknown> = {};
-  if (request) {
-    try {
-      body = await request.json();
-    } catch {
-      body = {};
-    }
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
   }
 
-  const state = await getSessionState(sessionIdFrom(request, body));
+  const state = await getSessionState(sessionIdFrom(request, body), graphId);
   const { session } = state;
   if (!session || session.phase !== "learning" || !session.activeConceptId) {
     return Response.json(
@@ -56,7 +58,7 @@ export async function POST(request?: Request) {
     concept: { label: concept.label, summary: concept.summary },
     lesson: { messages: lesson.messages },
     unlockedLabels: state.concepts.filter((c) => c.unlocked).map((c) => c.label),
-    editContext: formatEditContext(await getRecentEdits()),
+    editContext: formatEditContext(await getRecentEdits(graphId)),
   });
 
   const messages = [
@@ -70,10 +72,17 @@ export async function POST(request?: Request) {
       concept,
       state.concepts,
       outcome.remedial,
+      graphId,
     );
     messages.push(lessonMessage("event", `Detour queued · ${remedial.label}`));
   }
 
-  await appendLessonMessages(session.id, concept.id, messages);
-  return Response.json(await getSessionState(session.id));
+  await appendLessonMessages(
+    session.id,
+    concept.id,
+    messages,
+    undefined,
+    graphId,
+  );
+  return Response.json(await getSessionState(session.id, graphId));
 }

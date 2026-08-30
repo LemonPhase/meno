@@ -9,6 +9,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import NavIcon from "@/components/shell/NavIcon";
+import { useAccount } from "@/components/auth/AuthGate";
 import type { SessionSummary } from "@/lib/types";
 import { roman, timeAgo } from "@/lib/ui";
 
@@ -36,6 +37,7 @@ function sessionMeta(s: SessionSummary): string {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const account = useAccount();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [closed, setClosed] = useState(false);
@@ -175,6 +177,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
+
+        {account && (
+          <div className="account">
+            <span
+              className="who"
+              title={account.viewer.email ?? account.viewer.uid}
+            >
+              {account.viewer.name ?? account.viewer.email ?? "Signed in"}
+            </span>
+            <button className="act sc" onClick={account.signOut}>
+              Sign out
+            </button>
+          </div>
+        )}
       </aside>
 
       <main className="stage">{children}</main>

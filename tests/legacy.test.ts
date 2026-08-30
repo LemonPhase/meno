@@ -9,7 +9,12 @@ import { POST as postAdvance } from "@/app/api/session/advance/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import type { SessionSummary } from "@/lib/types";
-import { jsonRequest, type StateBody } from "./helpers";
+import {
+  USER,
+  authed,
+  jsonRequest,
+  type StateBody,
+} from "./helpers";
 
 // A Graph written before ADR-0004 kept Path state on the Concept and keyed
 // Lessons by Concept alone. The new code has to read it as it stands —
@@ -18,7 +23,7 @@ import { jsonRequest, type StateBody } from "./helpers";
 
 beforeEach(async () => {
   clearScriptedResponses();
-  await db.recursiveDelete(graphRef());
+  await db.recursiveDelete(graphRef(USER));
 });
 
 const SESSION = "legacy-session-1";
@@ -47,7 +52,7 @@ async function seedLegacyGraph() {
     ...extra,
   });
 
-  await graphRef().collection("sessions").doc(SESSION).set({
+  await graphRef(USER).collection("sessions").doc(SESSION).set({
     id: SESSION,
     topic: "Legacy topic",
     phase: "learning",
@@ -55,20 +60,20 @@ async function seedLegacyGraph() {
     recap: null,
     createdAt: now,
   });
-  await graphRef()
+  await graphRef(USER)
     .collection("concepts")
     .doc("c_known")
     .set(concept("c_known", "Known already", "unlocked", null, { skipped: true }));
-  await graphRef()
+  await graphRef(USER)
     .collection("concepts")
     .doc("c_active")
     .set(concept("c_active", "Being learned", "active", 0));
-  await graphRef()
+  await graphRef(USER)
     .collection("concepts")
     .doc("c_next")
     .set(concept("c_next", "Still to come", "locked", 1));
   // Keyed by Concept alone, as the old code wrote it.
-  await graphRef().collection("lessons").doc("c_active").set({
+  await graphRef(USER).collection("lessons").doc("c_active").set({
     conceptId: "c_active",
     sessionId: SESSION,
     messages: [{ kind: "exposition", text: "Legacy exposition.", createdAt: now }],
@@ -79,7 +84,7 @@ describe("a Graph written before ADR-0004", () => {
   it("reads as a Session with a Path reconstructed from the old orders", async () => {
     await seedLegacyGraph();
 
-    const body: StateBody = await (await GET()).json();
+    const body: StateBody = await (await GET(authed("/api/session"))).json();
     expect(body.session.id).toBe(SESSION);
     expect(body.session.path.map((e) => e.conceptId)).toEqual([
       "c_active",
@@ -104,7 +109,7 @@ describe("a Graph written before ADR-0004", () => {
     await seedLegacyGraph();
 
     const { sessions }: { sessions: SessionSummary[] } = await (
-      await getSessions()
+      await getSessions(authed("/api/sessions"))
     ).json();
     expect(sessions).toHaveLength(1);
     expect(sessions[0].pathLength).toBe(2);
@@ -120,7 +125,7 @@ describe("a Graph written before ADR-0004", () => {
     // pass offers the move, the move Unlocks and activates, and the last
     // one closes with a Recap.
     scriptModelResponse(JSON.stringify({ question: "Legacy check?" }));
-    expect((await postCheck()).status).toBe(200);
+    expect((await postCheck(authed("/api/session/check"))).status).toBe(200);
 
     scriptModelResponse(JSON.stringify({ verdict: "pass", feedback: "Yes." }));
     const graded: StateBody = await (
@@ -132,19 +137,19 @@ describe("a Graph written before ADR-0004", () => {
     expect(graded.session.activeConceptId).toBe("c_active");
 
     scriptModelResponse("Next exposition", JSON.stringify({ question: "Q?" }));
-    const moved: StateBody = await (await postAdvance()).json();
+    const moved: StateBody = await (await postAdvance(authed("/api/session/advance"))).json();
     expect(moved.session.activeConceptId).toBe("c_next");
     expect(moved.concepts.find((c) => c.id === "c_active")!.status).toBe(
       "unlocked",
     );
 
-    await postCheck();
+    await postCheck(authed("/api/session/check"));
     scriptModelResponse(JSON.stringify({ verdict: "pass", feedback: "Yes." }));
     await postAnswer(
       jsonRequest("/api/session/check/answer", { answer: "right" }),
     );
     scriptModelResponse("A legacy recap.");
-    const done: StateBody = await (await postAdvance()).json();
+    const done: StateBody = await (await postAdvance(authed("/api/session/advance"))).json();
     expect(done.session.phase).toBe("complete");
     expect(done.session.recap).toBe("A legacy recap.");
     expect(done.concepts.every((c) => c.status === "unlocked")).toBe(true);

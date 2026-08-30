@@ -5,7 +5,13 @@ import { POST as postCheck } from "@/app/api/session/check/route";
 import { POST as postAnswer } from "@/app/api/session/check/answer/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef, humanizeLabel } from "@/lib/store";
-import { jsonRequest, reachLearning, type StateBody } from "./helpers";
+import {
+  USER,
+  authed,
+  jsonRequest,
+  reachLearning,
+  type StateBody,
+} from "./helpers";
 
 // "Break it down": too hard means a prerequisite is missing, so the answer
 // is an insert_remedial Adjustment (ADR-0001) — never a restructuring of
@@ -14,7 +20,7 @@ import { jsonRequest, reachLearning, type StateBody } from "./helpers";
 
 beforeEach(async () => {
   clearScriptedResponses();
-  await db.recursiveDelete(graphRef());
+  await db.recursiveDelete(graphRef(USER));
 });
 
 const byLabel = (s: StateBody, label: string) =>
@@ -23,7 +29,7 @@ const byLabel = (s: StateBody, label: string) =>
 describe("POST /api/session/breakdown", () => {
   it("is refused once the Concept's Check is passed", async () => {
     const state = await reachLearning();
-    await postCheck();
+    await postCheck(authed("/api/session/check"));
     scriptModelResponse(JSON.stringify({ verdict: "pass", feedback: "Yes." }));
     await postAnswer(
       jsonRequest("/api/session/check/answer", { answer: "right" }),
@@ -33,9 +39,9 @@ describe("POST /api/session/breakdown", () => {
     // only come from one that has not. Nothing scripted: it must not reach
     // the model, let alone splice a prerequisite in front of a Concept the
     // learner has just demonstrated.
-    const res = await postBreakdown();
+    const res = await postBreakdown(authed("/api/session/breakdown"));
     expect(res.status).toBe(409);
-    const after: StateBody = await (await postCheck()).json();
+    const after: StateBody = await (await postCheck(authed("/api/session/check"))).json();
     expect(after.concepts).toHaveLength(state.concepts.length);
   });
 
@@ -50,7 +56,7 @@ describe("POST /api/session/breakdown", () => {
         remedial: { label: "Vectors", summary: "Ordered lists of numbers." },
       }),
     );
-    const after: StateBody = await (await postBreakdown()).json();
+    const after: StateBody = await (await postBreakdown(authed("/api/session/breakdown"))).json();
 
     const remedial = byLabel(after, "Vectors");
     expect(remedial.origin).toBe("remedial");
@@ -84,7 +90,7 @@ describe("POST /api/session/breakdown", () => {
         message: "Which part loses you — the vectors, or what the number means?",
       }),
     );
-    const after: StateBody = await (await postBreakdown()).json();
+    const after: StateBody = await (await postBreakdown(authed("/api/session/breakdown"))).json();
 
     expect(after.session.path).toHaveLength(before);
     const lesson = after.lessons.find(
@@ -95,7 +101,7 @@ describe("POST /api/session/breakdown", () => {
   });
 
   it("refuses a Session that is not Learning", async () => {
-    const res = await postBreakdown();
+    const res = await postBreakdown(authed("/api/session/breakdown"));
     expect(res.status).toBe(409);
   });
 });

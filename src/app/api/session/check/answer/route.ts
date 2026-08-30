@@ -1,5 +1,6 @@
 import { gradeMasteryCheck } from "@/ai/lesson";
 import { sessionIdFrom } from "@/lib/api";
+import { graphIdFrom, unauthorized } from "@/lib/auth";
 import { revealedCheck } from "@/lib/checks";
 import {
   appendLessonMessages,
@@ -21,6 +22,9 @@ import {
  * choose and is its own request — see the advance route.
  */
 export async function POST(request: Request) {
+  const graphId = await graphIdFrom(request);
+  if (!graphId) return unauthorized();
+
   let body: Record<string, unknown>;
   try {
     body = await request.json();
@@ -32,7 +36,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "answer is required" }, { status: 400 });
   }
 
-  const state = await getSessionState(sessionIdFrom(request, body));
+  const state = await getSessionState(sessionIdFrom(request, body), graphId);
   const { session } = state;
   if (!session || session.phase !== "learning" || !session.activeConceptId) {
     return Response.json(
@@ -65,22 +69,28 @@ export async function POST(request: Request) {
     lesson: { messages: lesson.messages },
     question: check.question,
     answer: answer.trim(),
-    editContext: formatEditContext(await getRecentEdits()),
+    editContext: formatEditContext(await getRecentEdits(graphId)),
   });
 
   // The Check is answered once. Claiming it before anything else is written
   // keeps a second answer in flight from grading into the same transcript
   // and applying a second Adjustment off the same stale Session.
-  if (!(await claimCheckResult(check.id, answer.trim(), grade.verdict))) {
+  if (!(await claimCheckResult(check.id, answer.trim(), grade.verdict, graphId))) {
     return Response.json(
       { error: "this Check has already been answered" },
       { status: 409 },
     );
   }
-  await appendLessonMessages(session.id, concept.id, [
-    lessonMessage("check-answer", answer.trim(), check.id),
-    lessonMessage("check-feedback", grade.feedback, check.id),
-  ]);
+  await appendLessonMessages(
+    session.id,
+    concept.id,
+    [
+      lessonMessage("check-answer", answer.trim(), check.id),
+      lessonMessage("check-feedback", grade.feedback, check.id),
+    ],
+    undefined,
+    graphId,
+  );
 
   // ADR-0001: the bounded Adjustment rides on the grading result, and is
   // recorded in the Lesson so the transcript explains itself later.
@@ -90,10 +100,15 @@ export async function POST(request: Request) {
       concept,
       state.concepts,
       grade.remedial,
+      graphId,
     );
-    await appendLessonMessages(session.id, concept.id, [
-      lessonMessage("event", `Detour queued · ${remedial.label}`),
-    ]);
+    await appendLessonMessages(
+      session.id,
+      concept.id,
+      [lessonMessage("event", `Detour queued · ${remedial.label}`)],
+      undefined,
+      graphId,
+    );
     // The skip rides a pass only. Each Concept on the Path is a prerequisite
     // of the one after it, so an answer that fails this Concept while
     // seeming to know the next says the Path is wrong — not that the learner
@@ -101,11 +116,15 @@ export async function POST(request: Request) {
     // so honouring it on fails also let three failures unlock three untaught
     // Concepts, Graph-wide and for good. See ADR-0001's 2026-08-30 addendum.
   } else if (grade.adjustment === "skip_next" && grade.verdict === "pass") {
-    const skipped = await skipNextConcept(session, state.concepts);
+    const skipped = await skipNextConcept(session, state.concepts, graphId);
     if (skipped) {
-      await appendLessonMessages(session.id, concept.id, [
-        lessonMessage("event", `${skipped.label} marked known · skipped`),
-      ]);
+      await appendLessonMessages(
+        session.id,
+        concept.id,
+        [lessonMessage("event", `${skipped.label} marked known · skipped`)],
+        undefined,
+        graphId,
+      );
     }
   }
 
@@ -113,8 +132,8 @@ export async function POST(request: Request) {
   // away: the Concept's one question is primed afresh, unchanged, with this
   // attempt and its feedback now standing above it in the Lesson.
   if (grade.verdict !== "pass") {
-    await saveMasteryCheck(session.id, concept.id, check.question);
+    await saveMasteryCheck(session.id, concept.id, check.question, graphId);
   }
 
-  return Response.json(await getSessionState(session.id));
+  return Response.json(await getSessionState(session.id, graphId));
 }

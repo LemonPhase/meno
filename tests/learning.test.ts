@@ -13,6 +13,8 @@ import { POST as postAnswer } from "@/app/api/session/check/answer/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import {
+  USER,
+  authed,
   FIRST_CHECK_QUESTION,
   jsonRequest,
   passAndMoveOn,
@@ -24,7 +26,7 @@ import {
 
 beforeEach(async () => {
   clearScriptedResponses();
-  await db.recursiveDelete(graphRef());
+  await db.recursiveDelete(graphRef(USER));
 });
 
 const active = (s: StateBody) =>
@@ -83,10 +85,10 @@ describe("POST /api/session/advance", () => {
     // exposition the first's question was written against — leaving the
     // Concept asking about text the learner is never shown.
     scriptModelResponse(byShape("S"), byShape("S"), byShape("S"), byShape("S"));
-    const [a, b] = await Promise.all([postAdvance(), postAdvance()]);
+    const [a, b] = await Promise.all([postAdvance(authed("/api/session/advance")), postAdvance(authed("/api/session/advance"))]);
     expect([a.status, b.status].sort()).toEqual([200, 409]);
 
-    const state: StateBody = await (await GET()).json();
+    const state: StateBody = await (await GET(authed("/api/session"))).json();
     const conceptId = state.session.activeConceptId!;
     expect(
       state.checks.filter(
@@ -112,7 +114,7 @@ describe("POST /api/session/advance", () => {
     );
 
     scriptModelResponse("You already knew it all!");
-    const res = await postAdvance();
+    const res = await postAdvance(authed("/api/session/advance"));
     const state: StateBody = await res.json();
 
     expect(state.session.phase).toBe("complete");
@@ -122,7 +124,7 @@ describe("POST /api/session/advance", () => {
 
   it("rejects advancing outside Previewing", async () => {
     await startInvestigatedSession();
-    expect((await postAdvance()).status).toBe(409);
+    expect((await postAdvance(authed("/api/session/advance"))).status).toBe(409);
   });
 });
 
@@ -164,7 +166,7 @@ describe("POST /api/session/check (mastery)", () => {
 
     // Nothing scripted: advancing already primed this Check (@/lib/checks),
     // so revealing it must not touch the model.
-    const res = await postCheck();
+    const res = await postCheck(authed("/api/session/check"));
     expect(res.status).toBe(200);
     const after: StateBody = await res.json();
 
@@ -182,20 +184,20 @@ describe("POST /api/session/check (mastery)", () => {
     await reachLearning();
     // Primed but not revealed, so both presses find nothing in the Lesson
     // and both would append the same question into the transcript.
-    const [a, b] = await Promise.all([postCheck(), postCheck()]);
+    const [a, b] = await Promise.all([postCheck(authed("/api/session/check")), postCheck(authed("/api/session/check"))]);
     expect([a.status, b.status]).toEqual([200, 200]);
 
-    const state: StateBody = await (await GET()).json();
+    const state: StateBody = await (await GET(authed("/api/session"))).json();
     const messages = lessonOf(state, state.session.activeConceptId!)!.messages;
     expect(messages.filter((m) => m.kind === "check-question")).toHaveLength(1);
   });
 
   it("is idempotent while a Check is pending (no new generation)", async () => {
     await reachLearning();
-    await postCheck();
+    await postCheck(authed("/api/session/check"));
 
     // Nothing scripted: a second request must not hit the model.
-    const res = await postCheck();
+    const res = await postCheck(authed("/api/session/check"));
     expect(res.status).toBe(200);
     const after: StateBody = await res.json();
     expect(
@@ -207,14 +209,14 @@ describe("POST /api/session/check (mastery)", () => {
     const state = await reachLearning();
     // Simulate a Session that predates priming: no Check exists yet.
     const conceptId = active(state)!.id;
-    const stale = await graphRef()
+    const stale = await graphRef(USER)
       .collection("checks")
       .where("conceptIds", "array-contains", conceptId)
       .get();
     await Promise.all(stale.docs.map((d) => d.ref.delete()));
 
     scriptModelResponse(JSON.stringify({ question: "Generated on demand?" }));
-    const res = await postCheck();
+    const res = await postCheck(authed("/api/session/check"));
     expect(res.status).toBe(200);
     const after: StateBody = await res.json();
     expect(pendingCheck(after)!.question).toBe("Generated on demand?");
@@ -224,7 +226,7 @@ describe("POST /api/session/check (mastery)", () => {
 describe("POST /api/session/check/answer", () => {
   it("a fail records the verdict and returns to conversation", async () => {
     const state = await reachLearning();
-    await postCheck(); // reveals the Check primed during advance
+    await postCheck(authed("/api/session/check")); // reveals the Check primed during advance
     // One response only: a fail re-primes the Concept's own question, which
     // costs no model call.
     scriptModelResponse(
@@ -258,13 +260,13 @@ describe("POST /api/session/check/answer", () => {
 
   it("attempts are uncapped, and re-ask the Concept's one question", async () => {
     await reachLearning();
-    await postCheck();
+    await postCheck(authed("/api/session/check"));
     // One scripted response, not two: a fail no longer writes a question.
     scriptModelResponse(JSON.stringify({ verdict: "fail", feedback: "No." }));
     await postAnswer(jsonRequest("/api/session/check/answer", { answer: "x" }));
 
     // Nothing scripted: the same question was primed again by the fail.
-    const state: StateBody = await (await postCheck()).json();
+    const state: StateBody = await (await postCheck(authed("/api/session/check"))).json();
     const masteries = state.checks.filter((c) => c.phase === "mastery");
     expect(masteries).toHaveLength(2);
     expect(pendingCheck(state)!.question).toBe(FIRST_CHECK_QUESTION);
@@ -277,7 +279,7 @@ describe("POST /api/session/check/answer", () => {
     scriptModelResponse("Another way to see it.");
     await postLesson(jsonRequest("/api/session/lesson", { message: "eh?" }));
 
-    const state: StateBody = await (await postCheck()).json();
+    const state: StateBody = await (await postCheck(authed("/api/session/check"))).json();
     expect(state.checks.filter((c) => c.phase === "mastery")).toHaveLength(1);
     expect(pendingCheck(state)!.question).toBe(FIRST_CHECK_QUESTION);
   });
@@ -285,7 +287,7 @@ describe("POST /api/session/check/answer", () => {
   it("a pass stays put: it offers the move rather than making it", async () => {
     const state = await reachLearning();
     const first = active(state)!;
-    await postCheck();
+    await postCheck(authed("/api/session/check"));
     // Only the grade is scripted — nothing is generated, because nothing
     // moves. A second Concept's exposition here would be a wasted call.
     scriptModelResponse(
@@ -337,7 +339,7 @@ describe("POST /api/session/check/answer", () => {
 
   it("writes the Concept's question against the exposition it tests", async () => {
     await reachLearning();
-    await postCheck();
+    await postCheck(authed("/api/session/check"));
     scriptModelResponse(JSON.stringify({ verdict: "pass", feedback: "Yes." }));
     await postAnswer(
       jsonRequest("/api/session/check/answer", { answer: "right" }),
@@ -353,14 +355,14 @@ describe("POST /api/session/check/answer", () => {
       checkPrompt = promptText(request as never);
       return JSON.stringify({ question: "Q2?" });
     });
-    await postAdvance();
+    await postAdvance(authed("/api/session/advance"));
 
     expect(checkPrompt).toContain(exposition);
   });
 
   it("teaches the next Concept to someone who has just passed its prerequisite", async () => {
     await reachLearning();
-    await postCheck();
+    await postCheck(authed("/api/session/check"));
     scriptModelResponse(JSON.stringify({ verdict: "pass", feedback: "Yes." }));
     await postAnswer(
       jsonRequest("/api/session/check/answer", { answer: "right" }),
@@ -378,7 +380,7 @@ describe("POST /api/session/check/answer", () => {
       },
       JSON.stringify({ question: "Q2?" }),
     );
-    await postAdvance();
+    await postAdvance(authed("/api/session/advance"));
 
     expect(taught).toContain("Dot product");
   });
@@ -387,7 +389,7 @@ describe("POST /api/session/check/answer", () => {
     await reachLearning();
     await passAndMoveOn({ exposition: "E2", question: "Q2?" });
     await passAndMoveOn({ exposition: "E3", question: "Q3?" });
-    await postCheck();
+    await postCheck(authed("/api/session/check"));
     scriptModelResponse(JSON.stringify({ verdict: "pass", feedback: "Yes." }));
     await postAnswer(
       jsonRequest("/api/session/check/answer", { answer: "right" }),
@@ -400,14 +402,14 @@ describe("POST /api/session/check/answer", () => {
       recap = promptText(request as never);
       return "A recap.";
     });
-    await postAdvance();
+    await postAdvance(authed("/api/session/advance"));
 
     expect(recap).toContain("Attention");
   });
 
   it("a second press of the move-on offer is refused, not applied twice", async () => {
     await reachLearning();
-    await postCheck();
+    await postCheck(authed("/api/session/check"));
     scriptModelResponse(JSON.stringify({ verdict: "pass", feedback: "Yes." }));
     await postAnswer(
       jsonRequest("/api/session/check/answer", { answer: "right" }),
@@ -419,7 +421,7 @@ describe("POST /api/session/check/answer", () => {
     // the price of generating before writing anything, and is refused rather
     // than overwriting the Lesson the winner just wrote.
     scriptModelResponse(byShape("P"), byShape("P"), byShape("P"), byShape("P"));
-    const [a, b] = await Promise.all([postAdvance(), postAdvance()]);
+    const [a, b] = await Promise.all([postAdvance(authed("/api/session/advance")), postAdvance(authed("/api/session/advance"))]);
     expect([a.status, b.status].sort()).toEqual([200, 409]);
 
     const state: StateBody = await (a.status === 200 ? a : b).json();
@@ -440,7 +442,7 @@ describe("POST /api/session/check/answer", () => {
   it("a failed generation leaves the Session where it stood, still able to move", async () => {
     const start = await reachLearning();
     const first = active(start)!;
-    await postCheck();
+    await postCheck(authed("/api/session/check"));
     scriptModelResponse(JSON.stringify({ verdict: "pass", feedback: "Yes." }));
     await postAnswer(
       jsonRequest("/api/session/check/answer", { answer: "right" }),
@@ -450,34 +452,34 @@ describe("POST /api/session/check/answer", () => {
     // or is rate-limited. Nothing may have been written by then — least of
     // all the Unlock, which would leave the Session standing on a Concept it
     // had already left and refuse every attempt to move again.
-    await expect(postAdvance()).rejects.toThrow();
+    await expect(postAdvance(authed("/api/session/advance"))).rejects.toThrow();
 
-    const after: StateBody = await (await GET()).json();
+    const after: StateBody = await (await GET(authed("/api/session"))).json();
     expect(after.session.activeConceptId).toBe(first.id);
     expect(after.concepts.find((c) => c.id === first.id)!.status).toBe(
       "active",
     );
 
     scriptModelResponse("Exposition 2", JSON.stringify({ question: "Q2?" }));
-    const retry = await postAdvance();
+    const retry = await postAdvance(authed("/api/session/advance"));
     expect(retry.status).toBe(200);
     expect(active(await retry.json())!.label).toBe("Softmax");
   });
 
   it("refuses to move on until the Check is passed", async () => {
     await reachLearning();
-    expect((await postAdvance()).status).toBe(409);
+    expect((await postAdvance(authed("/api/session/advance"))).status).toBe(409);
 
     // A fail is not a pass: still going nowhere.
-    await postCheck();
+    await postCheck(authed("/api/session/check"));
     scriptModelResponse(JSON.stringify({ verdict: "fail", feedback: "No." }));
     await postAnswer(jsonRequest("/api/session/check/answer", { answer: "x" }));
-    expect((await postAdvance()).status).toBe(409);
+    expect((await postAdvance(authed("/api/session/advance"))).status).toBe(409);
   });
 
   it("asking to be tested again after a pass is a no-op", async () => {
     await reachLearning();
-    await postCheck();
+    await postCheck(authed("/api/session/check"));
     scriptModelResponse(JSON.stringify({ verdict: "pass", feedback: "Yes." }));
     await postAnswer(
       jsonRequest("/api/session/check/answer", { answer: "right" }),
@@ -485,7 +487,7 @@ describe("POST /api/session/check/answer", () => {
 
     // Nothing scripted: there is one question per Concept and it is answered,
     // so this must not quietly write a second one.
-    const state: StateBody = await (await postCheck()).json();
+    const state: StateBody = await (await postCheck(authed("/api/session/check"))).json();
     expect(state.checks.filter((c) => c.phase === "mastery")).toHaveLength(1);
     expect(pendingCheck(state)).toBeUndefined();
   });
@@ -515,7 +517,7 @@ describe("POST /api/session/check/answer", () => {
     expect(state!.concepts.every((c) => !c.skipped)).toBe(true);
 
     // The Session is over: no further Checks or answers.
-    expect((await postCheck()).status).toBe(409);
+    expect((await postCheck(authed("/api/session/check"))).status).toBe(409);
     expect(
       (
         await postAnswer(
@@ -527,7 +529,7 @@ describe("POST /api/session/check/answer", () => {
 
   it("grades one answer per Check, whatever arrives alongside it", async () => {
     await reachLearning();
-    await postCheck();
+    await postCheck(authed("/api/session/check"));
 
     // Two answers in flight — a double submit, or a second tab. Both grade;
     // only one may write. The loser applying its Adjustment from the same
@@ -546,8 +548,8 @@ describe("POST /api/session/check/answer", () => {
     ]);
     expect([a.status, b.status].sort()).toEqual([200, 409]);
 
-    const after: StateBody = await (await GET()).json();
-    const inGraph = await graphRef().collection("concepts").get();
+    const after: StateBody = await (await GET(authed("/api/session"))).json();
+    const inGraph = await graphRef(USER).collection("concepts").get();
     expect(inGraph.size).toBe(after.concepts.length);
     expect(after.concepts.filter((c) => c.label === "Vectors")).toHaveLength(1);
     const messages = lessonOf(after, after.session.activeConceptId!)!.messages;

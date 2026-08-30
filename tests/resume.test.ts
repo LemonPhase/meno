@@ -8,6 +8,8 @@ import { POST as postLesson } from "@/app/api/session/lesson/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import {
+  USER,
+  authed,
   jsonRequest,
   passAndMoveOn,
   reachLearning,
@@ -21,12 +23,12 @@ import {
 
 beforeEach(async () => {
   clearScriptedResponses();
-  await db.recursiveDelete(graphRef());
+  await db.recursiveDelete(graphRef(USER));
 });
 
 /** Reload and compare: GET must reproduce the last response's state. */
 async function expectResumeMatches(last: StateBody) {
-  const reloaded: StateBody = await (await GET()).json();
+  const reloaded: StateBody = await (await GET(authed("/api/session"))).json();
   expect(reloaded.session).toEqual(last.session);
   expect(reloaded.concepts).toEqual(last.concepts);
   expect(reloaded.checks).toEqual(
@@ -72,7 +74,7 @@ describe("Session resume", () => {
     // Build up real Lesson history: a chat exchange and a failed Check.
     scriptModelResponse("Here's another way to see it.");
     await postLesson(jsonRequest("/api/session/lesson", { message: "eh?" }));
-    await postCheck(); // reveals the Check primed with the exposition
+    await postCheck(authed("/api/session/check")); // reveals the Check primed with the exposition
     scriptModelResponse(JSON.stringify({ verdict: "fail", feedback: "Almost." }));
     const state: StateBody = await (
       await postAnswer(

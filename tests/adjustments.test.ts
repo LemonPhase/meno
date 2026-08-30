@@ -5,6 +5,8 @@ import { POST as postAnswer } from "@/app/api/session/check/answer/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import {
+  USER,
+  authed,
   jsonRequest,
   passAndMoveOn,
   reachLearning,
@@ -17,7 +19,7 @@ import {
 
 beforeEach(async () => {
   clearScriptedResponses();
-  await db.recursiveDelete(graphRef());
+  await db.recursiveDelete(graphRef(USER));
 });
 
 const byLabel = (s: StateBody, label: string) =>
@@ -28,7 +30,7 @@ async function answerWith(
 ): Promise<StateBody> {
   // Whatever Check is Active already has one primed — from reachLearning()
   // or the previous turn — so revealing it costs no model call.
-  await postCheck();
+  await postCheck(authed("/api/session/check"));
   scriptModelResponse(JSON.stringify(grade));
   const res = await postAnswer(
     jsonRequest("/api/session/check/answer", { answer: "my attempt" }),

@@ -10,11 +10,14 @@ export default defineConfig({
     // the Firestore emulator (via `npm test`) make every flow deterministic.
     env: {
       MENO_MODEL: "scripted",
+      // Identity comes from the session cookie verbatim, so a test signs in
+      // by naming a uid — no Firebase Auth project needed. See lib/auth.
+      MENO_AUTH: "scripted",
       GCP_PROJECT_ID: "meno-test",
     },
     include: ["tests/**/*.test.ts"],
     testTimeout: 15000,
-    // All tests share the emulator's single demo-user Graph; parallel test
+    // All tests share the emulator's one test-reader Graph; parallel test
     // files would clobber each other's state.
     fileParallelism: false,
   },

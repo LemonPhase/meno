@@ -5,8 +5,13 @@
 // and the move on offer, one complete), a remedial detour, both kinds of
 // skip, Lessons with markdown and mathematics, Checks, and an Edit.
 //
-//   npm run seed          seed alongside whatever is already there
+//   npm run seed              seed alongside whatever is already there
 //   npm run seed -- --reset   wipe the Graph first
+//   npm run seed -- --graph <uid>   seed someone else's Graph
+//
+// It fills the "demoUser" Graph by default, which is what you get by
+// signing in with MENO_AUTH=scripted. Pass --graph with your own uid (shown
+// on the Settings page) to seed the Graph you see after a real sign-in.
 //
 // The emulator only. This refuses to run against live Firestore — see the
 // guard below — because it writes fabricated learning data.
@@ -59,7 +64,9 @@ const { getFirestore } = await import("firebase-admin/firestore");
 initializeApp({ projectId });
 const db = getFirestore();
 
-const GRAPH_ID = "demoUser";
+const graphArg = process.argv.indexOf("--graph");
+const GRAPH_ID =
+  graphArg === -1 ? "demoUser" : (process.argv[graphArg + 1] ?? "demoUser");
 const graph = db.collection("graphs").doc(GRAPH_ID);
 
 console.log(`Target: emulator at ${host}, project "${projectId}"`);

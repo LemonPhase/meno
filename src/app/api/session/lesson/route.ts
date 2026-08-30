@@ -1,5 +1,6 @@
 import { lessonReply } from "@/ai/lesson";
 import { sessionIdFrom } from "@/lib/api";
+import { graphIdFrom, unauthorized } from "@/lib/auth";
 import { passedCheck } from "@/lib/checks";
 import {
   appendLessonMessages,
@@ -9,6 +10,9 @@ import {
 
 /** Free-form conversation within the Active Concept's Lesson. */
 export async function POST(request: Request) {
+  const graphId = await graphIdFrom(request);
+  if (!graphId) return unauthorized();
+
   let body: Record<string, unknown>;
   try {
     body = await request.json();
@@ -20,7 +24,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "message is required" }, { status: 400 });
   }
 
-  const state = await getSessionState(sessionIdFrom(request, body));
+  const state = await getSessionState(sessionIdFrom(request, body), graphId);
   const { session } = state;
   if (!session || session.phase !== "learning" || !session.activeConceptId) {
     return Response.json(
@@ -46,14 +50,17 @@ export async function POST(request: Request) {
     passed: passedCheck(state.checks, concept.id) !== undefined,
   });
 
-  await appendLessonMessages(session.id, concept.id, [
-    lessonMessage("user", text),
-    lessonMessage("reply", reply),
-  ]);
+  await appendLessonMessages(
+    session.id,
+    concept.id,
+    [lessonMessage("user", text), lessonMessage("reply", reply)],
+    undefined,
+    graphId,
+  );
 
   // The Check is deliberately left alone here. It asks what the exposition
   // taught, not what this learner happened to ask about, so conversation
   // never reshapes the bar they are held to — see @/lib/checks.
 
-  return Response.json(await getSessionState(session.id));
+  return Response.json(await getSessionState(session.id, graphId));
 }

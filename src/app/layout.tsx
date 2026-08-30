@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { IBM_Plex_Sans, Newsreader } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/shell/AppShell";
+import AuthGate from "@/components/auth/AuthGate";
 
 const newsreader = Newsreader({
   variable: "--font-serif",
@@ -35,7 +36,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-        <AppShell>{children}</AppShell>
+        <AuthGate>
+          <AppShell>{children}</AppShell>
+        </AuthGate>
       </body>
     </html>
   );

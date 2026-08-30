@@ -27,7 +27,12 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let live = true;
     fetchViewer()
-      .catch(() => null)
+      .catch((error) => {
+        // The landing page is the only honest fallback — we don't know who
+        // is reading — but the reason belongs in the console, not nowhere.
+        console.error("[auth] could not read the session:", error);
+        return null;
+      })
       .then((v) => {
         if (!live) return;
         setViewer(v);

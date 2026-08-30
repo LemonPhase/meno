@@ -9,7 +9,13 @@ import {
   PATCH as patchConcept,
 } from "@/app/api/concepts/[id]/route";
 import { POST as postSession } from "@/app/api/session/route";
-import { isBadToken } from "@/lib/auth";
+import { POST as postAdvance } from "@/app/api/session/advance/route";
+import { POST as postBreakdown } from "@/app/api/session/breakdown/route";
+import { POST as postCheck } from "@/app/api/session/check/route";
+import { POST as postCheckAnswer } from "@/app/api/session/check/answer/route";
+import { POST as postDiagnostic } from "@/app/api/session/diagnostic/route";
+import { POST as postLesson } from "@/app/api/session/lesson/route";
+import { isBadToken, readCookie } from "@/lib/auth";
 import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import type { SessionSummary } from "@/lib/types";
@@ -35,6 +41,12 @@ beforeEach(async () => {
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 const anonymous = (url: string, init: RequestInit = {}) =>
   new Request(`http://test${url}`, init);
+const anonymousPost = (url: string, body: unknown = {}) =>
+  new Request(`http://test${url}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 
 describe("signed out", () => {
   it("refuses every route that touches a Graph", async () => {
@@ -74,6 +86,23 @@ describe("signed out", () => {
           ctx("x"),
         ),
       ],
+      // Every route that writes. These carry the guard today; the point of
+      // listing them is that a new one which forgets it cannot ship green.
+      ["POST /api/session/advance", postAdvance(anonymousPost("/api/session/advance"))],
+      ["POST /api/session/breakdown", postBreakdown(anonymousPost("/api/session/breakdown"))],
+      ["POST /api/session/check", postCheck(anonymousPost("/api/session/check"))],
+      [
+        "POST /api/session/check/answer",
+        postCheckAnswer(anonymousPost("/api/session/check/answer", { answer: "x" })),
+      ],
+      [
+        "POST /api/session/diagnostic",
+        postDiagnostic(anonymousPost("/api/session/diagnostic", { answers: [] })),
+      ],
+      [
+        "POST /api/session/lesson",
+        postLesson(anonymousPost("/api/session/lesson", { message: "hi" })),
+      ],
     ];
     for (const [name, call] of calls) {
       expect((await call).status, name).toBe(401);
@@ -101,6 +130,39 @@ describe("signed out", () => {
 // "could not verify sign-in". That points whoever is debugging at the token,
 // which was fine, instead of at the credential, which was not. Only a bad
 // token may be classified as the browser's fault.
+// Regression: the decode ran outside viewerFrom's try, so one malformed
+// cookie raised URIError out of every route that reads one — a 500 where
+// the honest answer is "signed out".
+describe("reading the cookie", () => {
+  const withCookie = (value: string) =>
+    new Request("http://test", { headers: { Cookie: value } });
+
+  it("reads a cookie that is there, and nothing that isn't", () => {
+    expect(readCookie(withCookie("meno_session=abc"), "meno_session")).toBe("abc");
+    expect(readCookie(withCookie("other=abc"), "meno_session")).toBeNull();
+    expect(readCookie(undefined, "meno_session")).toBeNull();
+    // Percent-encoding is decoded, and the name is matched exactly.
+    expect(readCookie(withCookie("meno_session=a%20b"), "meno_session")).toBe("a b");
+    expect(readCookie(withCookie("xmeno_session=abc"), "meno_session")).toBeNull();
+  });
+
+  it("treats an undecodable cookie as no cookie, rather than throwing", () => {
+    for (const raw of ["meno_session=abc%zz", "meno_session=%", "meno_session=%E0%A4"]) {
+      expect(() => readCookie(withCookie(raw), "meno_session"), raw).not.toThrow();
+      expect(readCookie(withCookie(raw), "meno_session"), raw).toBeNull();
+    }
+  });
+
+  it("answers 401 rather than 500 when the cookie is malformed", async () => {
+    const res = await getSessions(
+      new Request("http://test/api/sessions", {
+        headers: { Cookie: "meno_session=abc%zz" },
+      }),
+    );
+    expect(res.status).toBe(401);
+  });
+});
+
 describe("sign-in failures", () => {
   it("blames the token only for token errors", () => {
     for (const code of [
@@ -110,6 +172,9 @@ describe("sign-in failures", () => {
       "auth/invalid-id-token",
       "auth/user-disabled",
       "auth/user-not-found",
+      "auth/invalid-session-cookie",
+      "auth/session-cookie-expired",
+      "auth/session-cookie-revoked",
     ]) {
       expect(isBadToken({ code }), code).toBe(true);
     }

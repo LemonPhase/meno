@@ -39,9 +39,12 @@ const env = (key) => {
   return value && value.trim() !== "" ? value.trim() : undefined;
 };
 
+/** A flag's value, or undefined — never the *next flag*, which is a typo. */
 const flag = (name) => {
   const at = process.argv.indexOf(`--${name}`);
-  return at === -1 ? undefined : process.argv[at + 1];
+  if (at === -1) return undefined;
+  const value = process.argv[at + 1];
+  return value === undefined || value.startsWith("--") ? undefined : value;
 };
 
 const apply = process.argv.includes("--apply");
@@ -49,7 +52,7 @@ const merge = process.argv.includes("--merge");
 const from = flag("from") ?? "demoUser";
 const to = flag("to");
 
-if (!to || to.startsWith("--")) {
+if (!to) {
   console.error(
     "Which uid should the Graph move to? Pass --to <uid>.\n" +
       "It is shown on the Settings page once you are signed in.",

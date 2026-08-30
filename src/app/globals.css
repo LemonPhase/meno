@@ -643,9 +643,6 @@ a { color: inherit; text-decoration: none; }
   color: var(--ink3); font-size: 13px; font-style: italic;
   line-height: 1.55; margin-top: 14px;
 }
-/* legacy selectors kept so scripted/demo states don't unstyle */
-.cta .or, .cta .fine, .email-signin input { /* see .auth-* */ }
-
 .plate { margin: 0; }
 .plate .graphwrap { max-width: none; }
 /* An illustration, not a control: no pointer, no hover affordance. */

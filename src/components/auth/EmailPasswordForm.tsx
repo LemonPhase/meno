@@ -15,10 +15,18 @@ function friendly(error: unknown): string {
       return "That email and password don’t match an account.";
     case "auth/too-many-requests":
       return "Too many attempts — wait a moment and try again.";
+    case "auth/invalid-email":
+      return "That doesn’t look like an email address.";
+    case "auth/missing-password":
+      return "Enter your password.";
+    case "auth/network-request-failed":
+      return "Couldn’t reach the server — check your connection.";
+    case "auth/operation-not-allowed":
+      return "Email sign-in isn’t enabled for this project yet.";
     default:
-      return error instanceof Error
-        ? error.message
-        : "Sign-in didn’t go through.";
+      // Never the SDK's own string: it reads "Firebase: Error
+      // (auth/…).", which tells the reader nothing they can act on.
+      return "Sign-in didn’t go through.";
   }
 }
 
@@ -50,7 +58,7 @@ export default function EmailPasswordForm({
   }
 
   return (
-    <form className="email-signin" onSubmit={go} noValidate>
+    <form className="email-signin" onSubmit={go}>
       <label className="field">
         <span className="sc">Email</span>
         <input

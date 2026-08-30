@@ -47,7 +47,14 @@ export function readCookie(
     const eq = part.indexOf("=");
     if (eq === -1) continue;
     if (part.slice(0, eq).trim() !== name) continue;
-    return decodeURIComponent(part.slice(eq + 1).trim());
+    try {
+      return decodeURIComponent(part.slice(eq + 1).trim());
+    } catch {
+      // A cookie we cannot even decode is one we could never trust. It has
+      // to read as signed out: this runs before viewerFrom's try, so
+      // letting URIError escape 500s every route that reads a cookie.
+      return null;
+    }
   }
   return null;
 }
@@ -66,8 +73,14 @@ export async function viewerFrom(request?: Request): Promise<Viewer | null> {
       name: typeof claims.name === "string" ? claims.name : null,
       email: claims.email ?? null,
     };
-  } catch {
+  } catch (error) {
     // Expired, revoked or forged all read the same from here: signed out.
+    // Anything else is this server failing to *ask* — the keys fetch, most
+    // likely — and quietly signing everyone out is how an outage looks like
+    // a login bug for as long as nobody reads a log.
+    if (!isBadToken(error)) {
+      console.error("[auth] could not verify the session cookie:", error);
+    }
     return null;
   }
 }
@@ -94,6 +107,10 @@ const BAD_TOKEN = new Set([
   "auth/invalid-id-token",
   "auth/user-disabled",
   "auth/user-not-found",
+  // The session cookie rejects under its own names, on the read path.
+  "auth/invalid-session-cookie",
+  "auth/session-cookie-expired",
+  "auth/session-cookie-revoked",
 ]);
 
 export function isBadToken(error: unknown): boolean {

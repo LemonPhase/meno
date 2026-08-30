@@ -99,7 +99,13 @@ export async function signInWithEmailPassword(
 export async function signOut(): Promise<void> {
   // The cookie is what the server trusts, so dropping it is the sign-out.
   // Clearing Firebase's own client state after is tidiness, not security.
-  await fetch("/api/auth/session", { method: "DELETE" });
+  try {
+    await fetch("/api/auth/session", { method: "DELETE" });
+  } catch {
+    // Offline. The cookie outlives this until it expires, but the button
+    // still has to do something: end the session locally rather than
+    // appear dead and reject into nowhere.
+  }
   if (!scriptedAuth) {
     await auth()
       .signOut()
@@ -109,6 +115,11 @@ export async function signOut(): Promise<void> {
 
 export async function fetchViewer(): Promise<Viewer | null> {
   const res = await fetch("/api/auth/session");
-  if (!res.ok) return null;
+  // Signed out is a 200 with a null viewer, so a failure here is the server
+  // faulting, not an answer. Say so rather than reporting "signed out" and
+  // sending anyone debugging it to the sign-in they never broke.
+  if (!res.ok) {
+    throw new Error(`could not read the session (${res.status})`);
+  }
   return (await res.json()).viewer as Viewer | null;
 }

@@ -1,19 +1,14 @@
 import { sessionIdFrom } from "@/lib/api";
 import { graphIdFrom, unauthorized } from "@/lib/auth";
 import {
+  conceptById,
   deleteConcept,
-  getGraphOverview,
   getSessionState,
   renameConcept,
   sessionsLearning,
 } from "@/lib/store";
 
 type Context = { params: Promise<{ id: string }> };
-
-async function conceptById(id: string, graphId: string) {
-  const graph = await getGraphOverview(graphId);
-  return graph.concepts.find((c) => c.id === id) ?? null;
-}
 
 /** Rename a Concept (any status); recorded append-only as an Edit. */
 export async function PATCH(request: Request, { params }: Context) {

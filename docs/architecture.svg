@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 1010" width="1280" height="1010">
+  <style>
+    .arch text { font-family: Newsreader, Georgia, "Times New Roman", serif; }
+    .arch .sc {
+      font-family: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+      font-size: 10.5px; font-weight: 500; letter-spacing: 1.7px;
+          }
+    .arch .ti  { font-size: 31px; fill: #1b2029; font-weight: 400; }
+    .arch .sf  { font-size: 16.5px; fill: #5a616e; font-style: italic; }
+    .arch .h   { font-size: 19px; fill: #1b2029; }
+    .arch .h2  { font-size: 17.5px; fill: #1b2029; }
+    .arch .p   { font-size: 13.5px; fill: #5a616e; }
+    .arch .pi  { font-size: 13.5px; fill: #5a616e; font-style: italic; }
+    .arch .q   { font-size: 12.5px; fill: #8e8b7f; font-style: italic; }
+    .arch .n   { font-size: 15px; fill: #8e8b7f; }
+    .arch .lb  { font-family: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+                 font-size: 12.5px; fill: #5a616e; }
+    .arch .mono{ font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+                 font-size: 12px; fill: #5a616e; }
+  </style>
+
+  <g class="arch">
+  <rect width="1280" height="1010" fill="#f6f6f2"/>
+
+  <!-- masthead -->
+  <text class="sc" x="72" y="58" fill="#8e8b7f">MENO · SYSTEM ARCHITECTURE</text>
+  <text class="ti" x="72" y="98">One service, four layers, one Graph to a reader.</text>
+  <text class="sf" x="72" y="128">An agent that investigates a Topic, diagnoses the learner, and teaches it one atomic Concept at a time.</text>
+  <line x1="72" y1="150" x2="1208" y2="150" stroke="#1b2029" stroke-width="1"/>
+
+  <!-- the reader -->
+  <rect x="72" y="178" width="1136" height="152" fill="#fdfdfb" stroke="#deddd5"/>
+  <text class="sc" x="98" y="206" fill="#93261f">THE READER</text>
+  <text class="h"  x="98" y="238">Next.js 16 App Router · React 19</text>
+  <text class="pi" x="98" y="262">The browser holds no domain logic. Every move is a server round-trip, so a reload — or another device — resumes exactly where the Session stood.</text>
+  <line x1="98" y1="282" x2="1182" y2="282" stroke="#ebeae3"/>
+  <g>
+    <text class="lb" x="98"  y="309">Session workspace</text>
+    <line x1="222" y1="292" x2="222" y2="316" stroke="#ebeae3"/>
+    <text class="lb" x="246" y="309">Path rail</text>
+    <line x1="316" y1="292" x2="316" y2="316" stroke="#ebeae3"/>
+    <text class="lb" x="340" y="309">Graph canvas</text>
+    <line x1="434" y1="292" x2="434" y2="316" stroke="#ebeae3"/>
+    <text class="lb" x="458" y="309">Progress</text>
+    <line x1="530" y1="292" x2="530" y2="316" stroke="#ebeae3"/>
+    <text class="lb" x="554" y="309" style="fill:#93261f">Sign in with Google</text>
+  </g>
+
+  <!-- transport -->
+  <line x1="640" y1="330" x2="640" y2="374" stroke="#8e8b7f" stroke-width="1"/>
+  <path d="M634 366 L640 375 L646 366" fill="none" stroke="#8e8b7f" stroke-width="1"/>
+  <text class="q" x="662" y="350">Sign-in yields an ID token, traded once at /api/auth/session for an httpOnly</text>
+  <text class="q" x="662" y="368">session cookie that then rides every request the app already makes.</text>
+
+  <!-- google cloud -->
+  <rect x="72" y="386" width="1136" height="500" fill="none" stroke="#39568f" stroke-width="1"/>
+  <rect x="92" y="378" width="292" height="16" fill="#f6f6f2"/>
+  <text class="sc" x="98" y="390" fill="#39568f">GOOGLE CLOUD · PROJECT MENO-JZ-2026</text>
+
+  <!-- cloud run -->
+  <rect x="100" y="414" width="1080" height="332" fill="#fdfdfb" stroke="#deddd5"/>
+  <text class="sc" x="124" y="442" fill="#39568f">CLOUD RUN · SERVICE meno · EUROPE-WEST2 · RUNTIME SA meno-runtime · SCALES TO ZERO</text>
+
+  <!-- I -->
+  <line x1="124" y1="460" x2="1156" y2="460" stroke="#deddd5"/>
+  <text class="n"  x="124" y="486">I</text>
+  <text class="h2" x="166" y="486">Server interface — the route handlers</text>
+  <text class="p"  x="166" y="508">Ten routes: the whole surface the browser can reach. Each resolves the uid from the session cookie before anything else, so a signed-out</text>
+  <text class="p"  x="166" y="526">request is 401 and a signed-in one can only ever address its own subtree. The tests call these handlers directly, the way the browser does.</text>
+
+  <!-- II -->
+  <line x1="124" y1="546" x2="1156" y2="546" stroke="#ebeae3"/>
+  <text class="n"  x="124" y="572">II</text>
+  <text class="h2" x="166" y="572">Domain core — pure, and model-free</text>
+  <text class="p"  x="166" y="594">Linearizing the requires-DAG into a Path, deciding what comes next, and the two bounded Adjustments the agent may make: insert a remedial</text>
+  <text class="p"  x="166" y="612">Concept, or skip the next one. Keeping this out of the prompts is what makes the behaviour testable without a model at all.</text>
+
+  <!-- III -->
+  <line x1="124" y1="632" x2="1156" y2="632" stroke="#ebeae3"/>
+  <text class="n"  x="124" y="658">III</text>
+  <text class="h2" x="166" y="658">Agent — nine Genkit flows on Gemini 3.5</text>
+  <text class="p"  x="166" y="680" font-style="italic" style="fill:#1b2029">investigate</text>
+  <text class="p"  x="240" y="680">— grounded research, then structured extraction, then Attach.</text>
+  <text class="p"  x="606" y="680" font-style="italic" style="fill:#1b2029">diagnose</text>
+  <text class="p"  x="668" y="680">— write the Checks, then grade them.</text>
+  <text class="p"  x="893" y="680" font-style="italic" style="fill:#1b2029">lesson</text>
+  <text class="p"  x="937" y="680">— teach, reply, check, break down, recap.</text>
+  <text class="p"  x="166" y="698">The model proposes; the layer above decides what is written. Unknown prerequisite keys and bogus attach ids are dropped before any write.</text>
+
+  <!-- IV -->
+  <line x1="124" y1="718" x2="1156" y2="718" stroke="#ebeae3"/>
+  <text class="n"  x="124" y="736">IV</text>
+  <text class="h2" x="166" y="736">Store — one guarded commit to a move</text>
+  <text class="p"  x="620" y="736">Model calls land first, and the write is conditional: a stale click is refused, never half-applied.</text>
+
+  <!-- vertex -->
+  <rect x="100" y="770" width="528" height="96" fill="#e9edf4" stroke="#deddd5"/>
+  <text class="sc" x="124" y="796" fill="#39568f">VERTEX AI</text>
+  <text class="h2" x="124" y="822">Gemini 3.5 Flash · global endpoint</text>
+  <text class="p"  x="124" y="842">Google Search grounding on the investigation; Zod-typed output</text>
+  <text class="p"  x="124" y="858">on every extraction and grading call.</text>
+
+  <!-- firestore -->
+  <rect x="652" y="770" width="528" height="96" fill="#e9efe7" stroke="#deddd5"/>
+  <text class="sc" x="676" y="796" fill="#47704f">FIRESTORE · THE GRAPH</text>
+  <text class="mono" x="676" y="820" style="fill:#1b2029">graphs/{uid}/ concepts · sessions · lessons · checks · edits</text>
+  <text class="p"  x="676" y="842">The uid is the graphId. Rules deny every direct read: only the</text>
+  <text class="p"  x="676" y="858">Admin SDK, behind the handlers above, ever touches the data.</text>
+
+  <!-- connectors -->
+  <line x1="364" y1="746" x2="364" y2="764" stroke="#8e8b7f"/>
+  <path d="M358 756 L364 765 L370 756" fill="none" stroke="#8e8b7f"/>
+  <line x1="916" y1="746" x2="916" y2="764" stroke="#8e8b7f"/>
+  <path d="M910 756 L916 765 L922 756" fill="none" stroke="#8e8b7f"/>
+
+  <!-- delivery -->
+  <text class="sc" x="72" y="928" fill="#8e8b7f">DELIVERY · ON PUSH TO main</text>
+  <line x1="72" y1="940" x2="1208" y2="940" stroke="#deddd5"/>
+  <g>
+    <text class="h2" x="72"  y="968">GitHub Actions</text>
+    <text class="q"  x="72"  y="986">lint · tsc · 81 tests</text>
+    <line x1="238" y1="962" x2="256" y2="962" stroke="#8e8b7f"/><path d="M249 956 L257 962 L249 968" fill="none" stroke="#8e8b7f"/>
+    <text class="h2" x="272" y="968">Firestore emulator</text>
+    <text class="q"  x="272" y="986">with the scripted model — no GCP, no keys</text>
+    <line x1="562" y1="962" x2="580" y2="962" stroke="#8e8b7f"/><path d="M573 956 L581 962 L573 968" fill="none" stroke="#8e8b7f"/>
+    <text class="h2" x="596" y="968">Workload Identity</text>
+    <text class="q"  x="596" y="986">keyless OIDC — nothing stored</text>
+    <line x1="812" y1="962" x2="830" y2="962" stroke="#8e8b7f"/><path d="M823 956 L831 962 L823 968" fill="none" stroke="#8e8b7f"/>
+    <text class="h2" x="846" y="968">Artifact Registry</text>
+    <text class="q"  x="846" y="986">image tagged by commit</text>
+    <line x1="1024" y1="962" x2="1042" y2="962" stroke="#8e8b7f"/><path d="M1035 956 L1043 962 L1035 968" fill="none" stroke="#8e8b7f"/>
+    <text class="h2" x="1058" y="968" style="fill:#39568f">Cloud Run</text>
+    <text class="q"  x="1058" y="986">deploy, then smoke-check</text>
+  </g>
+  </g>
+</svg>

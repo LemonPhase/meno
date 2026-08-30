@@ -6,6 +6,19 @@ Give it a topic (or a concept you're stuck on), and the agent investigates it, f
 
 Named after Plato's *Meno* — the dialogue built around the paradox of how you search for knowledge you don't yet have.
 
+### **[→ Try it live](https://meno-965710783496.europe-west2.run.app)**
+
+Running on Cloud Run in `europe-west2`. Sign in with Google; your graph is your own.
+· **[Architecture](docs/architecture.md)** · **[Decision records](docs/adr/)**
+
+![A Meno session: the concept Query, Key, Value being taught, with the path rail alongside it](docs/session.png)
+
+*A session part-way along its path. The rail on the right is this session's ordering
+of what is left to teach — and **Softmax and Scaling** is marked `skipped · you knew
+it`, because the diagnostic found it was already there. Two levers sit under the
+composer: **Test me** when a concept is too easy, **Break it down** when it is too
+hard.*
+
 ## How it works
 
 1. **Enter a topic** — a bare concept name or pasted text (e.g. an abstract).
@@ -16,6 +29,16 @@ Named after Plato's *Meno* — the dialogue built around the paradox of how you 
 6. **Review the graph** — unlocked concepts form a node-link graph; each node links back to the session where you learned it. You can rename or delete nodes yourself; edits are recorded in an audit log that feeds back into future graph updates.
 
 You sign in with Google or an email and password; everything past that point belongs to your account. Sessions behave like conversations: several can be in progress at once, each resumable where you left off, and they all feed the one graph. A topic that rests on something you've already learned *attaches* to the concept you already have rather than duplicating it — and if you've already unlocked it, it's skipped rather than taught twice.
+
+## Architecture
+
+[![Meno architecture](docs/architecture.svg)](docs/architecture.md)
+
+One Next.js app on one Cloud Run service, in four layers: route handlers (the
+whole surface the browser can reach), a pure model-free domain core, the Genkit
+agent flows, and Firestore. The model sits behind a single seam (`MENO_MODEL`),
+which is why the test suite runs with no GCP credentials at all. Full write-up
+in **[docs/architecture.md](docs/architecture.md)**.
 
 ## Stack
 

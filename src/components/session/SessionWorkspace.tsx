@@ -401,11 +401,11 @@ function Previewing({
       <h1 className="h-display">Here is the whole path.</h1>
       {known.length > 0 && (
         <p className="lede">
-          From your answers, you already have{" "}
+          You already have{" "}
           <span className="known-row">
             {known.map((c) => c.label).join(", ")}
           </span>{" "}
-          — that goes straight into your graph.
+          — they stay in your graph, and off this path.
         </p>
       )}
       <div style={{ marginTop: 26 }}>

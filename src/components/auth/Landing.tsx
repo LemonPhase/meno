@@ -7,8 +7,6 @@
 // because the graph is the thing being offered.
 
 import GoogleButton from "@/components/auth/GoogleButton";
-import EmailPasswordForm from "@/components/auth/EmailPasswordForm";
-import { scriptedAuth } from "@/lib/firebase-client";
 import type { Viewer } from "@/lib/types";
 
 type Node = {
@@ -143,15 +141,7 @@ export default function Landing({
               <span className="attr sc">Plato · Meno, 80e</span>
             </blockquote>
 
-            <div className="auth-card">
-              {!scriptedAuth && (
-                <>
-                  <EmailPasswordForm onSignedIn={onSignedIn} />
-                  <div className="auth-divider sc" aria-hidden="true">
-                    <span>or</span>
-                  </div>
-                </>
-              )}
+            <div className="cta">
               <GoogleButton onSignedIn={onSignedIn} />
               <p className="fine">
                 One account, one graph. Signing in for the first time starts

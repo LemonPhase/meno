@@ -1,12 +1,7 @@
 "use client";
 
 import { getApps, initializeApp } from "firebase/app";
-import {
-  GoogleAuthProvider,
-  getAuth,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-} from "firebase/auth";
+import { GoogleAuthProvider, getAuth, signInWithPopup } from "firebase/auth";
 import type { Viewer } from "./types";
 
 /**
@@ -81,19 +76,6 @@ async function exchangeForSession(idToken: string): Promise<Viewer> {
 /** The Google popup, then the session cookie. Resolves to the Viewer. */
 export async function signInWithGoogle(): Promise<Viewer> {
   return exchangeForSession(await googleIdToken());
-}
-
-/**
- * Email and password, then the same session cookie. No popup: useful where
- * Google is not the right first-party, and the door that works without a
- * Google account at all.
- */
-export async function signInWithEmailPassword(
-  email: string,
-  password: string,
-): Promise<Viewer> {
-  const credential = await signInWithEmailAndPassword(auth(), email, password);
-  return exchangeForSession(await credential.user.getIdToken());
 }
 
 export async function signOut(): Promise<void> {

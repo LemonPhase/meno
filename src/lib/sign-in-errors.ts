@@ -8,6 +8,10 @@
  * rather than mistakes, so they say so: during setup the person reading
  * this *is* the operator, and "sign-in didn't go through" would send them
  * looking at their Google account instead of at their own console.
+ *
+ * Google is the only door, so the password codes are gone with the form
+ * that raised them — they would be unreachable, and an unreachable branch
+ * reads as a claim that something can still happen here.
  */
 export function signInError(error: unknown): string {
   switch ((error as { code?: string })?.code ?? "") {
@@ -26,16 +30,7 @@ export function signInError(error: unknown): string {
     case "auth/network-request-failed":
       return "Couldn’t reach the server — check your connection.";
 
-    // --- the credentials themselves ---
-    // Modern SDKs fold "no such user" and "wrong password" into one code.
-    case "auth/invalid-credential":
-    case "auth/user-not-found":
-    case "auth/wrong-password":
-      return "That email and password don’t match an account.";
-    case "auth/invalid-email":
-      return "That doesn’t look like an email address.";
-    case "auth/missing-password":
-      return "Enter your password.";
+    // --- the account itself ---
     case "auth/account-exists-with-different-credential":
       return "You’ve signed in before using a different method for this email.";
     case "auth/too-many-requests":

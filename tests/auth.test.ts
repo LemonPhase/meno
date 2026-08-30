@@ -209,7 +209,7 @@ describe("sign-in error messages", () => {
       ["auth/operation-not-allowed", "isn’t enabled"],
       ["auth/invalid-api-key", "Firebase configuration"],
       ["auth/popup-blocked", "pop-ups"],
-      ["auth/invalid-credential", "don’t match an account"],
+      ["auth/network-request-failed", "check your connection"],
     ];
     for (const [code, expected] of cases) {
       expect(signInError({ code }), code).toContain(expected);

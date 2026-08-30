@@ -706,7 +706,7 @@ export async function deleteConcept(
   graphId: string = DEMO_USER_ID,
 ): Promise<void> {
   const graph = graphRef(graphId);
-  const [conceptDocs, allConceptDocs, sessionDocs, lessonDocs] =
+  const [conceptDocs, allConceptDocs, sessionDocs, lessonDocs, checkDocs] =
     await Promise.all([
       graph
         .collection("concepts")
@@ -715,6 +715,10 @@ export async function deleteConcept(
       graph.collection("concepts").get(),
       graph.collection("sessions").get(),
       graph.collection("lessons").where("conceptId", "==", concept.id).get(),
+      graph
+        .collection("checks")
+        .where("conceptIds", "array-contains", concept.id)
+        .get(),
     ]);
   const allConcepts = allConceptDocs.docs.map((d) => d.data());
   const edit: Edit = {
@@ -729,6 +733,22 @@ export async function deleteConcept(
   const batch = db.batch();
   batch.delete(graph.collection("concepts").doc(concept.id));
   for (const doc of lessonDocs.docs) batch.delete(doc.ref);
+  // A Concept's Checks go with its Lessons — ADR-0003 is about not cascading
+  // to *dependents*, and these are the Concept's own record, not another
+  // Concept's. A diagnostic Check can probe several at once, though, and
+  // outlives any one of them: that one only loses the id, the same way a
+  // dependent's `requires` does, so nothing is left pointing at a Concept
+  // that is gone.
+  for (const doc of checkDocs.docs) {
+    const check = doc.data() as Check;
+    if (check.conceptIds.length <= 1) {
+      batch.delete(doc.ref);
+    } else {
+      batch.update(doc.ref, {
+        conceptIds: check.conceptIds.filter((id) => id !== concept.id),
+      });
+    }
+  }
   for (const doc of conceptDocs.docs) {
     const other = asConcept(doc.data());
     batch.update(doc.ref, {

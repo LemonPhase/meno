@@ -37,7 +37,7 @@ function Msg({
     case "reply":
       return (
         <div className={`speech${anim}`}>
-          <span className="who">Meno</span>
+          <span className="who">Tutor</span>
           <div className="txt">
             <Markdown text={message.text} animate={animate} />
           </div>
@@ -62,7 +62,7 @@ function Msg({
         : null;
       return (
         <div className={`speech${anim}`}>
-          <span className="who">Meno</span>
+          <span className="who">Tutor</span>
           <div className="txt">
             <span className={`verdict ${verdict === "pass" ? "pass" : "again"}`}>
               {verdict === "pass" ? "Check passed" : "Not yet"}

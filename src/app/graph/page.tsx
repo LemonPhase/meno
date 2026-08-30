@@ -117,7 +117,7 @@ export default function GraphPage() {
         ) : (
           <p className="mnote">
             Nothing yet. Renaming or removing a concept is recorded here, and
-            Meno reads it before it changes your graph again.
+            The tutor reads it before it changes your graph again.
           </p>
         )}
       </div>

@@ -99,7 +99,7 @@ export default function TopicEntry({
             ))}
           </div>
           <p className="entry-note">
-            Meno reads around your topic, finds where you actually start, and
+            The tutor reads around your topic, finds where you actually start, and
             shows you the whole path before teaching any of it.
           </p>
         </div>

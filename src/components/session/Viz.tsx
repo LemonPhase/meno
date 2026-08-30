@@ -39,8 +39,10 @@ const SVG_ATTRS = new Set([
 ]);
 
 // SVG attributes are case-sensitive in the DOM, and the model writes
-// (and the HTML parser lowercases) `viewBox`-style names. React passes
-// props through verbatim, so these must be re-camelCased by hand.
+// (and the HTML parser lowercases) hyphenated names. React drops
+// hyphenated props on SVG elements — `text-anchor` warns and never
+// reaches the DOM — so each must become a camelCase prop
+// (`textAnchor`); a few names carry inner caps beyond that.
 const CAMEL: Record<string, string> = {
   viewbox: "viewBox",
   preserveaspectratio: "preserveAspectRatio",
@@ -49,6 +51,9 @@ const CAMEL: Record<string, string> = {
   markerwidth: "markerWidth",
   markerheight: "markerHeight",
 };
+
+const camelAttr = (name: string): string =>
+  CAMEL[name] ?? name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
 
 /** Inks are palette tokens, never raw colors: figures stay on the three
     inks (and their backgrounds) in both themes by construction. */
@@ -110,9 +115,9 @@ function build(
       const ink = cleanInk(attr.value);
       if (ink) props[name] = ink;
     } else if (name === "marker-start" || name === "marker-mid" || name === "marker-end") {
-      if (MARKER_REF.test(attr.value.trim())) props[name] = attr.value.trim();
+      if (MARKER_REF.test(attr.value.trim())) props[camelAttr(name)] = attr.value.trim();
     } else if (SVG_ATTRS.has(name) && el.namespaceURI?.includes("svg")) {
-      props[CAMEL[name] ?? name] = attr.value.slice(0, 200);
+      props[camelAttr(name)] = attr.value.slice(0, 200);
     }
     // Anything else — style, href, every on* handler — is simply never
     // copied. The allowlist is the whole defence; there is no denylist

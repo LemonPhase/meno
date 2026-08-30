@@ -48,3 +48,6 @@ firebase-debug.log
 
 # playwright-cli session artifacts
 .playwright-cli/
+
+# local agent worktrees
+.claude/worktrees/

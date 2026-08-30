@@ -19,6 +19,7 @@ import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import Viz from "@/components/session/Viz";
 
 const STEP_MS = 15;
 const MAX_DELAY_MS = 850;
@@ -113,6 +114,37 @@ export function normalizeDisplayMath(src: string): string {
   return out.join("\n");
 }
 
+// A ```viz fence is the tutor drawing; every other fence stays code.
+// The code component must exist in the settled path too, so a figure
+// already on the sheet renders when the message is replayed from the
+// Lesson, not only while it is arriving.
+const baseComponents: Components = {
+  // A fence the model drew with is a figure, not code: route its body
+  // through the sanitizer/renderer. Every other fence stays code.
+  code(props) {
+    const { className, children } = props;
+    if (className === "language-viz") return <Viz code={String(children)} />;
+    return <code className={className}>{children}</code>;
+  },
+  // The figure is not code: a fence that drew a figure must not also
+  // inherit the pre's frame around it. The rendered child is the
+  // custom code component itself — an element with no inspectable
+  // type — so look at the original hast node instead: a fenced
+  // block's first child is the code element, and only a viz fence
+  // carries the language- class.
+  pre(props) {
+    const { node, children } = props as {
+      node?: { children?: Array<{ properties?: { className?: string[] } }> };
+      children?: ReactNode;
+    };
+    const first = node?.children?.[0];
+    if (first?.properties?.className?.includes("language-viz")) {
+      return <>{children}</>;
+    }
+    return <pre>{children}</pre>;
+  },
+};
+
 type Counter = { i: number };
 
 /**
@@ -203,7 +235,10 @@ function Markdown({
   // react-markdown new component types, remounting every block and
   // replaying the reveal from the top.
   const components = useMemo(
-    () => (animate ? animatedComponents({ i: 0 }) : undefined),
+    () =>
+      animate
+        ? { ...baseComponents, ...animatedComponents({ i: 0 }) }
+        : baseComponents,
     [animate],
   );
   const source = useMemo(() => normalizeDisplayMath(text), [text]);

@@ -144,7 +144,7 @@ put("lessons", `${S1}__${S1}_hyperplane`, {
   messages: [
     {
       kind: "exposition",
-      text: "A **hyperplane** in $\\mathbb{R}^n$ is the solution set of a single linear equation:\n\n$$\n\\mathbf{w}^\\top \\mathbf{x} + b = 0\n$$\n\nIn $\\mathbb{R}^2$ that is a line; in $\\mathbb{R}^3$, a plane. The vector $\\mathbf{w}$ is normal to it, and $b$ slides it off the origin.\n\n- $\\mathbf{w}$ sets the orientation\n- $b$ sets the offset",
+      text: "A **hyperplane** in $\\mathbb{R}^n$ is the solution set of a single linear equation:\n\n$$\n\\mathbf{w}^\\top \\mathbf{x} + b = 0\n$$\n\nIn $\\mathbb{R}^2$ that is a line; in $\\mathbb{R}^3$, a plane. The vector $\\mathbf{w}$ is normal to it, and $b$ slides it off the origin.\n\n- $\\mathbf{w}$ sets the orientation\n- $b$ sets the offset\n\n```viz\n<figure class=\"viz\">\n  <figcaption class=\"sc viz-cap\">One equation, one flat surface</figcaption>\n  <ol class=\"viz-flow\">\n    <li class=\"viz-step\"><span class=\"viz-tag sc\">The equation</span> every x with w\u00b7x held constant</li>\n    <li class=\"viz-step\"><span class=\"viz-tag sc\">The shape</span> flat — a line in the plane, a plane in space</li>\n    <li class=\"viz-step viz-now\"><span class=\"viz-tag sc\">The normal</span> w points straight out of it</li>\n  </ol>\n</figure>\n```",
       createdAt: at(),
     },
     { kind: "user", text: "So w always points away from the surface?", createdAt: at(1) },

@@ -45,3 +45,6 @@ next-env.d.ts
 firestore-debug.log
 firebase-debug.log
 .emulator-data/
+
+# playwright-cli session artifacts
+.playwright-cli/

@@ -639,6 +639,71 @@ a { color: inherit; text-decoration: none; }
 .rubric .md p { font-style: italic; font-size: 17px; line-height: 1.62; }
 .rubric .md code { font-style: normal; }
 
+/* =================== figures (```viz) ===================
+   The model draws with the vocabulary the sheet reads in: three inks,
+   hairline rules, the .sc apparatus. Structure is the model's; look is
+   entirely this stylesheet's, so a figure cannot drift from the
+   marginalia. Geometry no flow can express arrives as inline SVG whose
+   data-ink/data-fill tokens resolve to the CSS vars — themes switch
+   without the model ever seeing a hex. */
+.viz-mount { margin: 20px 0; }
+.viz-mount > figure { margin: 0; }
+.viz-mount figcaption, .viz-mount .viz-cap { color: var(--ink3); margin-bottom: 12px; display: block; }
+.viz-flow {
+  display: flex; align-items: stretch; flex-wrap: wrap; gap: 0;
+  border: 1px solid var(--rule); background: var(--sheet); box-shadow: var(--shadow);
+  padding: 16px 18px;
+}
+.viz-flow > .viz-step { flex: 1 1 110px; margin: 0; }
+/* The arrow is a non-li flex item: ::marker ignores content, and a
+   pseudo-element on .viz-step cannot sit between flex items. */
+.viz-flow > .viz-step + .viz-step::before {
+  content: "→"; align-self: center; flex: 0 0 auto; padding: 0 10px;
+  color: var(--ink3); font-family: var(--font-plex), sans-serif; font-size: 13px;
+}
+.viz-step {
+  border: 1px solid var(--rule); background: var(--sheet);
+  padding: 11px 13px; min-width: 110px;
+}
+.viz-step + .viz-step { margin-top: 8px; }
+.viz-tag { display: block; color: var(--lapis-ink); margin-bottom: 3px; }
+.viz-step em, .viz-step i { color: var(--ink2); }
+/* Where knowledge is attained: laurel; rubric stays the reader's. */
+.viz-now { border-color: var(--lapis); background: var(--lapis-bg); }
+.viz-done { border-color: var(--laurel); background: var(--laurel-bg); }
+.viz-done .viz-tag { color: var(--laurel-ink); }
+.viz-step ol, .viz-step ul, .viz-mount ol, .viz-mount ul { list-style: none; margin: 0; padding: 0; }
+/* A branch is a step containing steps, drawn as its own row. */
+.viz-branch { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.viz-branch > li { flex: 1 1 140px; }
+.viz-axis {
+  display: flex; align-items: stretch; flex-wrap: wrap; gap: 0;
+  border: 1px solid var(--rule); background: var(--sheet); box-shadow: var(--shadow);
+  padding: 16px 18px;
+}
+.viz-axis > li { flex: 1 1 100px; }
+.viz-axis > li + li::before {
+  content: "—"; align-self: center; padding: 0 10px; color: var(--rule);
+}
+/* SVG escape hatch: the kit's ink tokens, not raw colors — the
+   sanitizer only lets known tokens through, so this list is the whole
+   palette and themes switch without the model ever seeing a hex. */
+.viz-mount svg { display: block; width: 100%; height: auto; }
+.viz-mount svg text { fill: var(--ink); font-family: var(--font-serif), Georgia, serif; }
+.viz-mount svg [data-ink] { stroke: var(--viz-stroke); }
+.viz-mount svg [data-fill] { fill: var(--viz-fill); }
+.viz-mount svg [data-ink="ink"],    .viz-mount svg [data-fill="ink"]    { --viz-stroke: var(--ink);    --viz-fill: var(--ink); }
+.viz-mount svg [data-ink="ink2"],   .viz-mount svg [data-fill="ink2"]   { --viz-stroke: var(--ink2);   --viz-fill: var(--ink2); }
+.viz-mount svg [data-ink="ink3"],   .viz-mount svg [data-fill="ink3"]   { --viz-stroke: var(--ink3);   --viz-fill: var(--ink3); }
+.viz-mount svg [data-ink="rule"],   .viz-mount svg [data-fill="rule"]   { --viz-stroke: var(--rule);   --viz-fill: var(--rule); }
+.viz-mount svg [data-ink="sheet"],  .viz-mount svg [data-fill="sheet"]  { --viz-stroke: var(--sheet);  --viz-fill: var(--sheet); }
+.viz-mount svg [data-ink="lapis"],  .viz-mount svg [data-fill="lapis"]  { --viz-stroke: var(--lapis);  --viz-fill: var(--lapis); }
+.viz-mount svg [data-ink="laurel"], .viz-mount svg [data-fill="laurel"] { --viz-stroke: var(--laurel); --viz-fill: var(--laurel); }
+.viz-mount svg [data-ink="rubric"], .viz-mount svg [data-fill="rubric"] { --viz-stroke: var(--rubric); --viz-fill: var(--rubric); }
+.viz-mount svg [data-fill="lapis-bg"],  .viz-mount svg [data-ink="lapis-bg"]  { --viz-stroke: var(--lapis-bg);  --viz-fill: var(--lapis-bg); }
+.viz-mount svg [data-fill="laurel-bg"], .viz-mount svg [data-ink="laurel-bg"] { --viz-stroke: var(--laurel-bg); --viz-fill: var(--laurel-bg); }
+.viz-mount svg [data-fill="rubric-bg"], .viz-mount svg [data-ink="rubric-bg"] { --viz-stroke: var(--rubric-bg); --viz-fill: var(--rubric-bg); }
+
 /* =================== toast =================== */
 .toast {
   position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 14px);

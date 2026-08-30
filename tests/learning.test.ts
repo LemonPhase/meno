@@ -178,6 +178,18 @@ describe("POST /api/session/check (mastery)", () => {
     expect(last.checkId).toBe(check.id);
   });
 
+  it("reveals the question once, however many presses arrive together", async () => {
+    await reachLearning();
+    // Primed but not revealed, so both presses find nothing in the Lesson
+    // and both would append the same question into the transcript.
+    const [a, b] = await Promise.all([postCheck(), postCheck()]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+
+    const state: StateBody = await (await GET()).json();
+    const messages = lessonOf(state, state.session.activeConceptId!)!.messages;
+    expect(messages.filter((m) => m.kind === "check-question")).toHaveLength(1);
+  });
+
   it("is idempotent while a Check is pending (no new generation)", async () => {
     await reachLearning();
     await postCheck();
@@ -344,6 +356,53 @@ describe("POST /api/session/check/answer", () => {
     await postAdvance();
 
     expect(checkPrompt).toContain(exposition);
+  });
+
+  it("teaches the next Concept to someone who has just passed its prerequisite", async () => {
+    await reachLearning();
+    await postCheck();
+    scriptModelResponse(JSON.stringify({ verdict: "pass", feedback: "Yes." }));
+    await postAnswer(
+      jsonRequest("/api/session/check/answer", { answer: "right" }),
+    );
+
+    // The Concept being left is Unlocked by this move, so it is still Locked
+    // in the state the move was planned from. Left uncounted, every
+    // exposition is written as though the learner had never met the very
+    // Concept it builds on.
+    let taught = "";
+    scriptModelResponse(
+      (request) => {
+        taught = promptText(request as never);
+        return "Exposition 2";
+      },
+      JSON.stringify({ question: "Q2?" }),
+    );
+    await postAdvance();
+
+    expect(taught).toContain("Dot product");
+  });
+
+  it("credits the last Concept passed in the Recap", async () => {
+    await reachLearning();
+    await passAndMoveOn({ exposition: "E2", question: "Q2?" });
+    await passAndMoveOn({ exposition: "E3", question: "Q3?" });
+    await postCheck();
+    scriptModelResponse(JSON.stringify({ verdict: "pass", feedback: "Yes." }));
+    await postAnswer(
+      jsonRequest("/api/session/check/answer", { answer: "right" }),
+    );
+
+    // The Concept they are walking out on is the one they most recently
+    // proved, and the Recap is where that is said back to them.
+    let recap = "";
+    scriptModelResponse((request) => {
+      recap = promptText(request as never);
+      return "A recap.";
+    });
+    await postAdvance();
+
+    expect(recap).toContain("Attention");
   });
 
   it("a second press of the move-on offer is refused, not applied twice", async () => {

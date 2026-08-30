@@ -21,7 +21,12 @@ export async function advanceToNextConcept(
   from: string | null,
 ): Promise<boolean> {
   const next = nextLockedConcept(session, concepts);
-  const unlocked = concepts.filter((c) => c.unlocked);
+  // `from` is Unlocked by this move, in the commit below — it is still
+  // Locked in the snapshot that got us here. Counting it now is what keeps
+  // the next exposition from being written as though the learner had never
+  // met its immediate prerequisite, and keeps the Recap from omitting the
+  // last thing they passed.
+  const unlocked = concepts.filter((c) => c.unlocked || c.id === from);
   if (next) {
     const { exposition } = await teachConcept({
       topic: session.topic,

@@ -67,15 +67,23 @@ export async function POST(request?: Request) {
         await generateMasteryCheck({
           topic: session.topic,
           concept: { label: concept.label, summary: concept.summary },
-          lesson: { messages: lesson.messages },
+          // The exposition only, never the conversation around it: this is
+          // the one path that can still write a Concept's first question,
+          // so it is the one that must not let what was asked set the bar.
+          lesson: {
+            messages: lesson.messages.filter((m) => m.kind === "exposition"),
+          },
         })
       ).question;
     check = await saveMasteryCheck(session.id, concept.id, question);
   }
 
-  await appendLessonMessages(session.id, concept.id, [
-    lessonMessage("check-question", check.question, check.id),
-  ]);
+  await appendLessonMessages(
+    session.id,
+    concept.id,
+    [lessonMessage("check-question", check.question, check.id)],
+    check.id,
+  );
 
   return Response.json(await getSessionState(session.id));
 }

@@ -154,7 +154,7 @@ put("lessons", `${S1}__${S1}_hyperplane`, {
       createdAt: at(1),
     },
     { kind: "check-question", text: "Why is $\\mathbf{w}$ called the normal vector?", checkId: "seed-check-1", createdAt: at(2) },
-    { kind: "check-answer", text: "Because it is perpendicular to the hyperplane.", createdAt: at(1) },
+    { kind: "check-answer", text: "Because it is perpendicular to the hyperplane.", checkId: "seed-check-1", createdAt: at(1) },
     { kind: "check-feedback", text: "Exactly right — and that is why the distance from a point to the plane divides by $\\lVert\\mathbf{w}\\rVert$.", checkId: "seed-check-1", createdAt: at(1) },
   ],
 });
@@ -275,7 +275,7 @@ put("lessons", `${S3}__${S3}_bayes`, {
       createdAt: at(),
     },
     { kind: "check-question", text: "A test with a 1% false positive rate comes back positive for a disease affecting 1 in 10,000. Why is the posterior still small?", checkId: "seed-check-3", createdAt: at(2) },
-    { kind: "check-answer", text: "Because the prior is tiny, so most positives are false ones from the huge healthy group.", createdAt: at(1) },
+    { kind: "check-answer", text: "Because the prior is tiny, so most positives are false ones from the huge healthy group.", checkId: "seed-check-3", createdAt: at(1) },
     { kind: "check-feedback", text: "Right — the base rate does the work. Worth carrying forward: 100 false positives against 1 true one is the whole of the argument, and it is the *ratio* of those counts, not either alone, that the posterior reports.", checkId: "seed-check-3", createdAt: at(1) },
   ],
 });
@@ -314,4 +314,5 @@ const counts = await Promise.all(
 console.log(
   "Seeded: " + counts.map(([c, n]) => `${n} ${c}`).join(" · "),
 );
-console.log(`Open:   http://localhost:3000/sessions/${S2}`);
+console.log(`Open:   http://localhost:3000/sessions/${S2}  (mid-Path, Check still to face)`);
+console.log(`        http://localhost:3000/sessions/${S3}  (Check passed, free to move on)`);

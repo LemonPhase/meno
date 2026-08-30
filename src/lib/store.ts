@@ -427,22 +427,40 @@ export async function activateConcept(
   });
 }
 
+/**
+ * Append to a Lesson, reporting whether the append happened.
+ *
+ * `onceForCheckId` makes it conditional: nothing is written if the Lesson
+ * already holds a message for that Check. Revealing a Check is told apart
+ * from priming it by the Lesson holding its question (see @/lib/checks), so
+ * the read that decides and the write that makes it true have to be the same
+ * transaction — two presses of "Test me" arriving together would each find
+ * nothing revealed and each append, putting the question in twice.
+ */
 export async function appendLessonMessages(
   sessionId: string,
   conceptId: string,
   messages: LessonMessage[],
+  onceForCheckId?: string,
   graphId: string = DEMO_USER_ID,
-): Promise<void> {
+): Promise<boolean> {
   const lessons = graphRef(graphId).collection("lessons");
   const ref = lessons.doc(lessonKey(sessionId, conceptId));
-  await db.runTransaction(async (tx) => {
+  return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     // Pre-ADR-0004 Lessons are keyed by Concept alone; append to whichever
     // document actually holds this Lesson.
     const target = snap.exists ? snap : await tx.get(lessons.doc(conceptId));
     if (!target.exists) throw new Error("no Lesson to append to");
     const lesson = target.data() as Lesson;
+    if (
+      onceForCheckId !== undefined &&
+      lesson.messages.some((m) => m.checkId === onceForCheckId)
+    ) {
+      return false;
+    }
     tx.update(target.ref, { messages: [...lesson.messages, ...messages] });
+    return true;
   });
 }
 

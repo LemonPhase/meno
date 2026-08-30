@@ -606,42 +606,12 @@ a { color: inherit; text-decoration: none; }
 .gbtn:disabled { border-color: var(--rule); color: var(--ink3); cursor: default; }
 .gbtn .mark { width: 17px; height: 17px; display: block; flex: none; }
 .signin-err { color: var(--rubric-ink); font-size: 13.5px; font-style: italic; margin-top: 10px; line-height: 1.5; }
-/* Auth is secondary to the plate: same rule language, no shadow,
-   so the graph's sheet+shadow stays the one elevated figure. */
-.auth-card {
-  border: 1px solid var(--rule2); background: transparent;
-  padding: 18px 18px 14px; max-width: 332px;
-}
-.auth-card .gbtn { width: 100%; justify-content: center; }
-/* Google is secondary — paper-quiet, sheet only on hover */
-.auth-card > div > .gbtn { background: transparent; border-color: var(--rule); color: var(--ink2); }
-.auth-card > div > .gbtn:hover:not(:disabled) { background: var(--sheet); border-color: var(--ink3); color: var(--ink); }
-.email-signin { display: flex; flex-direction: column; gap: 12px; }
-.email-signin .field { display: flex; flex-direction: column; gap: 6px; }
-.email-signin .field .sc { color: var(--ink3); font-size: 9px; letter-spacing: 0.18em; }
-.email-signin .field input {
-  border: 1px solid var(--rule2); background: var(--sheet);
-  padding: 10px 12px; color: var(--ink); font-size: 15px; line-height: 1.4;
-  width: 100%; border-radius: 2px;
-  transition: border-color 0.18s ease;
-}
-.email-signin .field input::placeholder { color: var(--ink3); opacity: 0.6; }
-.email-signin .field input:focus { outline: none; border-color: var(--ink3); background: var(--sheet); }
-.email-signin .field input:-webkit-autofill,
-.email-signin .field input:-webkit-autofill:hover,
-.email-signin .field input:-webkit-autofill:focus {
-  -webkit-box-shadow: 0 0 0 1000px var(--sheet) inset;
-  -webkit-text-fill-color: var(--ink);
-}
-.auth-divider {
-  display: flex; align-items: center; gap: 12px;
-  color: var(--ink3); margin: 16px 0 16px;
-}
-.auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
-.auth-divider span { font-size: 10px; }
-.auth-card .fine {
-  color: var(--ink3); font-size: 13px; font-style: italic;
-  line-height: 1.55; margin-top: 14px;
+/* One door, so no card around it: a bordered button inside a bordered box
+   is two rectangles saying the same thing. The button carries its own rule
+   and the plate keeps the page's only sheet-and-shadow. */
+.cta .fine {
+  color: var(--ink3); font-size: 13.5px; font-style: italic;
+  line-height: 1.55; max-width: 44ch; margin-top: 15px;
 }
 .plate { margin: 0; }
 .plate .graphwrap { max-width: none; }

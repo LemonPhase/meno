@@ -28,7 +28,7 @@ hard.*
 5. **Learn, one node at a time** — each node is taught and quizzed only when you reach it (lazy generation). Two levers sit in the composer: **Test me** when it's too easy (it skips the teaching, never the verification), and **Break it down** when it's too hard (the agent finds the prerequisite you're missing and teaches that first, as a short detour). Each node has one check; pass it and **Next concept** appears and stays, so you leave when you're satisfied rather than the moment you're graded. Your answers can also trigger the agent to insert a remedial node, or — when a passing answer demonstrates the next node too — to skip that one; the graph reshapes live as this happens.
 6. **Review the graph** — unlocked concepts form a node-link graph; each node links back to the session where you learned it. You can rename or delete nodes yourself; edits are recorded in an audit log that feeds back into future graph updates.
 
-You sign in with Google or an email and password; everything past that point belongs to your account. Sessions behave like conversations: several can be in progress at once, each resumable where you left off, and they all feed the one graph. A topic that rests on something you've already learned *attaches* to the concept you already have rather than duplicating it — and if you've already unlocked it, it's skipped rather than taught twice.
+You sign in with Google; everything past that point belongs to your account. Sessions behave like conversations: several can be in progress at once, each resumable where you left off, and they all feed the one graph. A topic that rests on something you've already learned *attaches* to the concept you already have rather than duplicating it — and if you've already unlocked it, it's skipped rather than taught twice.
 
 ## Architecture
 
@@ -55,9 +55,9 @@ in **[docs/architecture.md](docs/architecture.md)**.
 - Node.js 22+
 - A GCP project with the Vertex AI API enabled and billing configured
 - A Firebase project (can be the same GCP project) with Firestore enabled, and
-  both **Google** and **Email/Password** enabled under Authentication →
-  Sign-in method. The landing page offers both doors; a provider that is off
-  fails with `auth/operation-not-allowed` when someone tries it.
+  **Google** enabled under Authentication → Sign-in method (the only provider
+  the landing page offers; one that is off fails with
+  `auth/operation-not-allowed` when someone tries it)
 
 ### Setup
 
@@ -241,4 +241,4 @@ but restrict it to the Identity Toolkit API under Google Cloud console → APIs
 
 ## Status
 
-Early build — in progress. Current scope is Google and email sign-in with one graph per account, text-only topic input (file upload planned), and a bounded adaptive path (insert-remedial / skip-next). Cross-session graph merging, richer graph editing (merge nodes, manual edges), and a dedicated LLM-analysis layer over the edit audit log are explicit future work.
+Early build — in progress. Current scope is Google sign-in with one graph per account, text-only topic input (file upload planned), and a bounded adaptive path (insert-remedial / skip-next). Cross-session graph merging, richer graph editing (merge nodes, manual edges), and a dedicated LLM-analysis layer over the edit audit log are explicit future work.

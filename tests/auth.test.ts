@@ -16,6 +16,7 @@ import { POST as postCheckAnswer } from "@/app/api/session/check/answer/route";
 import { POST as postDiagnostic } from "@/app/api/session/diagnostic/route";
 import { POST as postLesson } from "@/app/api/session/lesson/route";
 import { isBadToken, readCookie } from "@/lib/auth";
+import { signInError } from "@/lib/sign-in-errors";
 import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import type { SessionSummary } from "@/lib/types";
@@ -194,6 +195,36 @@ describe("sign-in failures", () => {
     ]) {
       expect(isBadToken(error), JSON.stringify(error)).toBe(false);
     }
+  });
+});
+
+// Regression: the Google button reported err.message straight from the
+// SDK, so a misconfigured deploy told the operator "Firebase: Error
+// (auth/unauthorized-domain)." — which names the fault without saying what
+// it is or who can fix it. Nothing may reach a reader in the SDK's voice.
+describe("sign-in error messages", () => {
+  it("explains the misconfigurations rather than naming their codes", () => {
+    const cases: [string, string][] = [
+      ["auth/unauthorized-domain", "authorised list"],
+      ["auth/operation-not-allowed", "isn’t enabled"],
+      ["auth/invalid-api-key", "Firebase configuration"],
+      ["auth/popup-blocked", "pop-ups"],
+      ["auth/invalid-credential", "don’t match an account"],
+    ];
+    for (const [code, expected] of cases) {
+      expect(signInError({ code }), code).toContain(expected);
+    }
+  });
+
+  it("never passes the SDK's own message through", () => {
+    const raw = new Error("Firebase: Error (auth/unauthorized-domain).");
+    (raw as Error & { code: string }).code = "auth/unauthorized-domain";
+    expect(signInError(raw)).not.toContain("Firebase:");
+    // Including for codes the table does not know.
+    const unknown = new Error("Firebase: Error (auth/some-future-code).");
+    (unknown as Error & { code: string }).code = "auth/some-future-code";
+    expect(signInError(unknown)).toBe("Sign-in didn’t go through.");
+    expect(signInError(undefined)).toBe("Sign-in didn’t go through.");
   });
 });
 

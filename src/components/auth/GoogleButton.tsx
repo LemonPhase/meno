@@ -6,6 +6,7 @@ import {
   scriptedAuth,
   signInWithGoogle,
 } from "@/lib/firebase-client";
+import { signInError } from "@/lib/sign-in-errors";
 import type { Viewer } from "@/lib/types";
 
 /** Google's mark, in its own colours — the one place the palette gives way. */
@@ -50,11 +51,7 @@ export default function GoogleButton({
     try {
       onSignedIn(await signInWithGoogle());
     } catch (err) {
-      if (!isCancelledSignIn(err)) {
-        setError(
-          err instanceof Error ? err.message : "Sign-in didn’t go through.",
-        );
-      }
+      if (!isCancelledSignIn(err)) setError(signInError(err));
       setBusy(false);
     }
   }

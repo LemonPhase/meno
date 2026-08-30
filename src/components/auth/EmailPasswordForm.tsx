@@ -2,33 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 import { signInWithEmailPassword } from "@/lib/firebase-client";
+import { signInError } from "@/lib/sign-in-errors";
 import type { Viewer } from "@/lib/types";
-
-/** Common credential errors, in the register's voice. */
-function friendly(error: unknown): string {
-  const code = (error as { code?: string })?.code ?? "";
-  switch (code) {
-    // Modern SDKs fold "no such user" and "wrong password" into this one.
-    case "auth/invalid-credential":
-    case "auth/user-not-found":
-    case "auth/wrong-password":
-      return "That email and password don’t match an account.";
-    case "auth/too-many-requests":
-      return "Too many attempts — wait a moment and try again.";
-    case "auth/invalid-email":
-      return "That doesn’t look like an email address.";
-    case "auth/missing-password":
-      return "Enter your password.";
-    case "auth/network-request-failed":
-      return "Couldn’t reach the server — check your connection.";
-    case "auth/operation-not-allowed":
-      return "Email sign-in isn’t enabled for this project yet.";
-    default:
-      // Never the SDK's own string: it reads "Firebase: Error
-      // (auth/…).", which tells the reader nothing they can act on.
-      return "Sign-in didn’t go through.";
-  }
-}
 
 /**
  * The quieter door: email and password, no popup. Sign-in only — Firebase
@@ -52,7 +27,7 @@ export default function EmailPasswordForm({
     try {
       onSignedIn(await signInWithEmailPassword(email.trim(), password));
     } catch (err) {
-      setError(friendly(err));
+      setError(signInError(err));
       setBusy(false);
     }
   }

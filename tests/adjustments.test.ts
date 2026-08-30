@@ -4,7 +4,12 @@ import { POST as postCheck } from "@/app/api/session/check/route";
 import { POST as postAnswer } from "@/app/api/session/check/answer/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
-import { jsonRequest, reachLearning, type StateBody } from "./helpers";
+import {
+  jsonRequest,
+  passAndMoveOn,
+  reachLearning,
+  type StateBody,
+} from "./helpers";
 
 // ADR-0001: Adjustments are bounded to insert_remedial and skip_next,
 // riding on the grading call. Path starts as: dot-product → softmax →
@@ -18,8 +23,11 @@ beforeEach(async () => {
 const byLabel = (s: StateBody, label: string) =>
   s.concepts.find((c) => c.label === label)!;
 
-async function answerWith(grade: object): Promise<StateBody> {
-  scriptModelResponse(JSON.stringify({ question: "Q?" }));
+async function answerWith(
+  grade: { verdict: "pass" | "fail" } & Record<string, unknown>,
+): Promise<StateBody> {
+  // Whatever Check is Active already has one primed — from reachLearning()
+  // or the previous turn — so revealing it costs no model call.
   await postCheck();
   scriptModelResponse(JSON.stringify(grade));
   const res = await postAnswer(
@@ -54,23 +62,18 @@ describe("Adjustment: insert_remedial", () => {
     expect(byLabel(state, "Softmax").requires).toContain(remedial.id);
   });
 
-  it("a pass with insert_remedial activates the remedial next", async () => {
+  it("a pass with insert_remedial puts the remedial next in line", async () => {
     await reachLearning();
-    scriptModelResponse(JSON.stringify({ question: "Q?" }));
-    await postCheck();
-    scriptModelResponse(
-      JSON.stringify({
-        verdict: "pass",
-        feedback: "Right, though shakily.",
-        adjustment: "insert_remedial",
-        remedial: { label: "Vectors", summary: "Ordered lists of numbers." },
-      }),
-      "Remedial exposition",
+    const state = await passAndMoveOn(
+      { exposition: "Remedial exposition", question: "Vectors check?" },
+      {
+        grade: {
+          feedback: "Right, though shakily.",
+          adjustment: "insert_remedial",
+          remedial: { label: "Vectors", summary: "Ordered lists of numbers." },
+        },
+      },
     );
-    const res = await postAnswer(
-      jsonRequest("/api/session/check/answer", { answer: "shaky but right" }),
-    );
-    const state: StateBody = await res.json();
 
     expect(byLabel(state, "Dot product").status).toBe("unlocked");
     const remedial = byLabel(state, "Vectors");
@@ -94,22 +97,19 @@ describe("Adjustment: insert_remedial", () => {
 });
 
 describe("Adjustment: skip_next", () => {
-  it("marks the next Concept Unlocked + Skipped on a pass and advances past it", async () => {
+  it("marks the next Concept Unlocked + Skipped on a pass, and moving on passes it by", async () => {
+    // The safety net it is meant to be: this answer passed *and* covered
+    // the next Concept, so teaching that one would waste the learner's time.
     await reachLearning();
-    scriptModelResponse(JSON.stringify({ question: "Q?" }));
-    await postCheck();
-    scriptModelResponse(
-      JSON.stringify({
-        verdict: "pass",
-        feedback: "You clearly know softmax too.",
-        adjustment: "skip_next",
-      }),
-      "Attention exposition",
+    const state = await passAndMoveOn(
+      { exposition: "Attention exposition", question: "Attention check?" },
+      {
+        grade: {
+          feedback: "You clearly know softmax too.",
+          adjustment: "skip_next",
+        },
+      },
     );
-    const res = await postAnswer(
-      jsonRequest("/api/session/check/answer", { answer: "great answer" }),
-    );
-    const state: StateBody = await res.json();
 
     expect(byLabel(state, "Dot product").status).toBe("unlocked");
     expect(byLabel(state, "Dot product").skipped).toBe(false);
@@ -123,18 +123,28 @@ describe("Adjustment: skip_next", () => {
     expect(state.session.activeConceptId).toBe(attention.id);
   });
 
-  it("skips the next Concept even on a fail, keeping the current one Active", async () => {
+  it("ignores skip_next on a fail, however often it is offered", async () => {
     await reachLearning();
-    const state = await answerWith({
-      verdict: "fail",
-      feedback: "Current concept shaky, but you clearly know softmax.",
-      adjustment: "skip_next",
-    });
 
-    expect(byLabel(state, "Dot product").status).toBe("active");
-    expect(byLabel(state, "Softmax").status).toBe("unlocked");
-    expect(byLabel(state, "Softmax").skipped).toBe(true);
-    expect(state.session.phase).toBe("learning");
+    // The Path is a prerequisite claim: knowing Softmax while failing Dot
+    // product says the Path was built wrong, not that Softmax may be handed
+    // over. Attempts re-ask the same question and are uncapped, so a model
+    // that keeps offering the skip must not get it — three fails would
+    // otherwise unlock three untaught Concepts, Graph-wide and for good.
+    let state: StateBody | null = null;
+    for (let i = 0; i < 3; i++) {
+      state = await answerWith({
+        verdict: "fail",
+        feedback: "Current concept shaky, but you clearly know softmax.",
+        adjustment: "skip_next",
+      });
+    }
+
+    expect(byLabel(state!, "Dot product").status).toBe("active");
+    expect(byLabel(state!, "Softmax").status).toBe("locked");
+    expect(byLabel(state!, "Softmax").skipped).toBe(false);
+    expect(byLabel(state!, "Attention").status).toBe("locked");
+    expect(state!.session.phase).toBe("learning");
   });
 
   it("Path order stays consistent through a remedial detour to Completion", async () => {
@@ -149,21 +159,17 @@ describe("Adjustment: skip_next", () => {
 
     // …then pass everything in the adjusted order:
     // dot-product → Vectors → Softmax → Attention.
-    const expositions = ["E-vectors", "E-softmax", "E-attention", "Recap!"];
     let state: StateBody | null = null;
-    for (const next of expositions) {
-      scriptModelResponse(JSON.stringify({ question: "Q?" }));
-      await postCheck();
-      scriptModelResponse(
-        JSON.stringify({ verdict: "pass", feedback: "Yes." }),
-        next,
-      );
-      state = await (
-        await postAnswer(
-          jsonRequest("/api/session/check/answer", { answer: "right" }),
-        )
-      ).json();
+    for (const next of [
+      { exposition: "E-vectors", question: "Q-vectors?" },
+      { exposition: "E-softmax", question: "Q-softmax?" },
+      { exposition: "E-attention", question: "Q-attention?" },
+    ]) {
+      state = await passAndMoveOn(next);
     }
+    // Attention is the last Concept on the Path: leaving it completes the
+    // Session with a Recap instead of priming another Check.
+    state = await passAndMoveOn({ recap: "Recap!" });
 
     expect(state!.session.phase).toBe("complete");
     expect(state!.session.recap).toBe("Recap!");

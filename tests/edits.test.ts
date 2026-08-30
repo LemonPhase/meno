@@ -132,6 +132,68 @@ describe("DELETE /api/concepts/[id]", () => {
     });
   });
 
+  it("takes the Concept's own Checks with it, and only those", async () => {
+    // reachLearning leaves one diagnostic Check per Concept and a mastery
+    // Check primed on the Active one. Softmax's diagnostic Check is solely
+    // about Softmax, so it goes; the others stay untouched.
+    const state = await reachLearning();
+    const softmax = byLabel(state, "Softmax");
+    const before = await graphRef().collection("checks").get();
+    expect(
+      before.docs.filter((d) =>
+        (d.data().conceptIds as string[]).includes(softmax.id),
+      ),
+    ).not.toHaveLength(0);
+
+    await DELETE(
+      new Request(`http://test/api/concepts/${softmax.id}`, {
+        method: "DELETE",
+      }),
+      ctx(softmax.id),
+    );
+
+    const after = await graphRef().collection("checks").get();
+    // Nothing anywhere still points at a Concept that is gone…
+    for (const doc of after.docs) {
+      expect(doc.data().conceptIds).not.toContain(softmax.id);
+    }
+    // …and the Checks about other Concepts are all still there.
+    expect(after.size).toBe(
+      before.docs.filter(
+        (d) => !(d.data().conceptIds as string[]).includes(softmax.id),
+      ).length,
+    );
+  });
+
+  it("keeps a Check that probes more than one Concept, minus the deleted one", async () => {
+    const state = await reachLearning();
+    const softmax = byLabel(state, "Softmax");
+    const attention = byLabel(state, "Attention");
+    // A diagnostic Check may name several Concepts for one question; it is
+    // about the others too, so it outlives any one of them.
+    await graphRef().collection("checks").doc("spanning").set({
+      id: "spanning",
+      sessionId: state.session.id,
+      phase: "diagnostic",
+      conceptIds: [softmax.id, attention.id],
+      question: "Something about both?",
+      answer: null,
+      verdict: null,
+      createdAt: Date.now(),
+    });
+
+    await DELETE(
+      new Request(`http://test/api/concepts/${softmax.id}`, {
+        method: "DELETE",
+      }),
+      ctx(softmax.id),
+    );
+
+    const kept = await graphRef().collection("checks").doc("spanning").get();
+    expect(kept.exists).toBe(true);
+    expect(kept.data()!.conceptIds).toEqual([attention.id]);
+  });
+
   it("refuses to delete a Concept that is being learned", async () => {
     const state = await reachLearning();
     const active = byLabel(state, "Dot product");
@@ -182,14 +244,16 @@ describe("Edits reach later agent calls as context", () => {
       ctx(softmax.id),
     );
 
-    scriptModelResponse(JSON.stringify({ question: "Q?" }));
-    await postCheck();
+    await postCheck(); // already primed alongside reachLearning()'s advance
 
     let gradingPrompt = "";
-    scriptModelResponse((req) => {
-      gradingPrompt = promptText(req);
-      return JSON.stringify({ verdict: "fail", feedback: "No." });
-    });
+    scriptModelResponse(
+      (req) => {
+        gradingPrompt = promptText(req);
+        return JSON.stringify({ verdict: "fail", feedback: "No." });
+      },
+      JSON.stringify({ question: "Retry?" }),
+    );
     await postAnswer(
       jsonRequest("/api/session/check/answer", { answer: "hm" }),
     );

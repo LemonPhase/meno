@@ -40,7 +40,7 @@ async function intoLearning(sessionId: string, checks: { id: string }[]) {
       answers: checks.map((c) => ({ checkId: c.id, answer: "no idea" })),
     }),
   );
-  scriptModelResponse("First exposition");
+  scriptModelResponse("First exposition", JSON.stringify({ question: "Q?" }));
   await postAdvance(
     new Request(`http://test/api/session/advance?session=${sessionId}`, {
       method: "POST",
@@ -79,7 +79,10 @@ describe("Concurrent Sessions", () => {
       await getSession(new Request("http://test"), ctx(first.session.id))
     ).json();
 
-    scriptModelResponse("A reply in the second session.");
+    scriptModelResponse(
+      "A reply in the second session.",
+      JSON.stringify({ question: "Q, revised?" }),
+    );
     await postLesson(
       jsonRequest("/api/session/lesson", {
         sessionId: second.session.id,
@@ -114,7 +117,7 @@ describe("Concurrent Sessions", () => {
       await getSession(new Request("http://test"), ctx(first.session.id))
     ).json();
 
-    scriptModelResponse(JSON.stringify({ question: "Which dot product?" }));
+    // Already primed alongside intoLearning()'s advance — no script needed.
     const res = await postCheck(
       jsonRequest("/api/session/check", { sessionId: first.session.id }),
     );

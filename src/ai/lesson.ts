@@ -3,9 +3,11 @@ import { ai, model } from "./genkit";
 import type { Concept, Lesson } from "@/lib/types";
 
 // The Learning loop's model calls: teach a Concept, hold the Lesson
-// conversation, generate mastery Checks, grade answers, and write the
-// closing Recap. Every call gets the Lesson so far as context — that's
-// what "learning how the user learns" means in practice.
+// conversation, write and grade its mastery Check, and write the closing
+// Recap. The conversational calls get the Lesson so far as context — that's
+// what "learning how the user learns" means in practice. The Check is the
+// deliberate exception: it sees the exposition it tests and nothing after
+// it, so that what the learner asked can never move the bar they are held to.
 
 const transcript = (lesson: Pick<Lesson, "messages">) =>
   lesson.messages
@@ -58,13 +60,19 @@ export const teachConcept = ai.defineFlow(
   async ({ topic, concept, unlockedLabels }) => {
     const res = await ai.generate({
       model,
-      prompt: `You are a warm, precise tutor. The learner's goal: ${topic}.
+      prompt: `Write the reference entry for one Concept in a learner's path
+toward: ${topic}.
 ${conceptIntro(concept)}
-They already understand: ${unlockedLabels.join(", ") || "(nothing yet)"}.
+The reader already understands: ${unlockedLabels.join(", ") || "(nothing yet)"}.
 
-Teach exactly this one concept, building on what they already understand.
-Be concrete, use one good example, and keep it tight (150-300 words).
-End by inviting questions, or to say when they're ready to be tested.
+This is a formal, encyclopedic page, not a greeting or a chat message — it
+is the thing the learner lands on, before they've asked anything. Open with
+a precise definition, then explain the mechanism or reasoning behind it,
+building on what the reader already understands, and give one concrete
+example. Write in the expository register: no "you", no "let's", no
+"welcome back", no inviting questions — that voice belongs to the
+conversation that follows, once the reader actually asks something. Keep it
+tight (150-300 words).
 
 ${VOICE}`,
     });
@@ -84,10 +92,14 @@ export const lessonReply = ai.defineFlow(
         ),
       }),
       message: z.string(),
+      passed: z
+        .boolean()
+        .default(false)
+        .describe("the Concept's mastery Check is already passed"),
     }),
     outputSchema: z.object({ reply: z.string() }),
   },
-  async ({ topic, concept, lesson, message }) => {
+  async ({ topic, concept, lesson, message, passed }) => {
     const res = await ai.generate({
       model,
       prompt: `You are a warm, precise tutor. The learner's goal: ${topic}.
@@ -99,8 +111,13 @@ ${transcript(lesson as Lesson)}
 The learner says:
 ${message}
 
-Answer helpfully and concisely, staying on this concept. If they seem ready,
-remind them they can ask to be tested.
+Answer helpfully and concisely, staying on this concept. ${
+        passed
+          ? "They have already passed this concept's check — never suggest " +
+            "they ask to be tested, and do not push them onward; they move " +
+            "on when they choose."
+          : "If they seem ready, remind them they can ask to be tested."
+      }
 
 ${VOICE}`,
     });
@@ -128,11 +145,13 @@ export const generateMasteryCheck = ai.defineFlow(
       prompt: `You are a tutor writing a mastery check. The learner's goal: ${topic}.
 ${conceptIntro(concept)}
 
-The lesson so far (note any earlier check attempts — never repeat a question):
+What the learner has been shown:
 ${transcript(lesson as Lesson)}
 
-Write ONE fresh question that tests real understanding of this concept,
-answerable in a sentence or two of free text.
+Write the ONE question this concept is checked on. It stays with the concept
+and is re-asked on every attempt, so it must test understanding of the idea
+as taught above — not a detail of its phrasing, and not something the text
+never covers. Answerable in a sentence or two of free text.
 
 ${VOICE}`,
       output: { schema: z.object({ question: z.string() }) },
@@ -155,8 +174,9 @@ export const GradeSchema = z.object({
     .default("none")
     .describe(
       "insert_remedial: the answer reveals a real gap that needs its own " +
-        "small lesson spliced in next. skip_next: the answer clearly " +
-        "demonstrates the NEXT concept too. Otherwise none.",
+        "small lesson spliced in next. skip_next: this answer passes AND " +
+        "demonstrates the NEXT concept just as completely — never on a " +
+        "fail. Otherwise none.",
     ),
   remedial: z
     .object({
@@ -227,17 +247,28 @@ ${transcript(lesson as Lesson)}
 Question: ${question}
 Learner's answer: ${answer}
 
-Grade it: "pass" only if the answer demonstrates real understanding of the
-concept. Give brief, encouraging feedback either way — if it's a fail, say
-what was missing without giving the full answer away.
+Grade it: "pass" when they have hold of the core idea. It need not be
+complete or well put — an answer that is right in substance but thin, or
+partial, still passes, and your feedback is where you fill the rest in.
+Reserve "fail" for an answer that misses or mistakes the idea itself; say
+what is missing without giving the answer away, since they can attempt the
+same question again.
+
+Give brief feedback either way. Passing does not move them on — they stay
+on this concept for as long as they want and leave when they choose — so
+never tell them what comes next or that they are moving to it.
 
 ${VOICE}
 
 You may also adjust the path (adjustment field):
 - "insert_remedial" with a remedial {label, summary} when the answer reveals
   a specific underlying gap worth its own small lesson before continuing.
-- "skip_next" when the answer ALSO clearly demonstrates understanding of the
-  next concept on the path.
+- "skip_next" ONLY when you are passing this answer and it demonstrates the
+  next concept on the path just as completely. Every concept here is a
+  prerequisite of the one after it, so an answer that fails this concept
+  while appearing to know the next one means the path was built wrong — not
+  that they may skip ahead. Grade that as a fail with "none" and let them
+  learn this concept properly.
 - otherwise "none". Use these sparingly — only on strong evidence.
 ${editContext ? `\n${editContext}\nNever insert a remedial that recreates something they deleted.` : ""}`,
       output: { schema: GradeSchema },

@@ -84,7 +84,7 @@ function eventKind(text: string): "plain" | "mark" | "detour" {
   return "plain";
 }
 
-export function EventLine({
+function EventLine({
   text,
   kind = "plain",
   animate = false,
@@ -107,8 +107,6 @@ export default function LessonFlow({
   checks,
   animateAfter,
   busy,
-  before,
-  after,
 }: {
   messages: LessonMessage[];
   checks: Check[];
@@ -116,13 +114,10 @@ export default function LessonFlow({
   animateAfter: number;
   /** A label for the thinking indicator, or null. */
   busy: string | null;
-  before?: React.ReactNode;
-  after?: React.ReactNode;
 }) {
   const checkById = new Map(checks.map((c) => [c.id, c]));
   return (
     <div className="prose">
-      {before}
       {messages.map((m, i) => (
         <Msg
           key={`${i}-${m.createdAt}`}
@@ -131,7 +126,6 @@ export default function LessonFlow({
           checkById={checkById}
         />
       ))}
-      {after}
       {busy && (
         <div className="thinking">
           <i></i>

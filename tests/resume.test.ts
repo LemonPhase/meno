@@ -9,6 +9,7 @@ import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import {
   jsonRequest,
+  passAndMoveOn,
   reachLearning,
   startInvestigatedSession,
   type StateBody,
@@ -71,11 +72,8 @@ describe("Session resume", () => {
     // Build up real Lesson history: a chat exchange and a failed Check.
     scriptModelResponse("Here's another way to see it.");
     await postLesson(jsonRequest("/api/session/lesson", { message: "eh?" }));
-    scriptModelResponse(JSON.stringify({ question: "Q1?" }));
-    await postCheck();
-    scriptModelResponse(
-      JSON.stringify({ verdict: "fail", feedback: "Almost." }),
-    );
+    await postCheck(); // reveals the Check primed with the exposition
+    scriptModelResponse(JSON.stringify({ verdict: "fail", feedback: "Almost." }));
     const state: StateBody = await (
       await postAnswer(
         jsonRequest("/api/session/check/answer", { answer: "hmm" }),
@@ -105,19 +103,14 @@ describe("Session resume", () => {
   it("a Complete Session reloads with its Recap and Graph intact", async () => {
     await reachLearning();
     let state: StateBody | null = null;
-    for (const next of ["E2", "E3", "The recap!"]) {
-      scriptModelResponse(JSON.stringify({ question: "Q?" }));
-      await postCheck();
-      scriptModelResponse(
-        JSON.stringify({ verdict: "pass", feedback: "Yes." }),
-        next,
-      );
-      state = await (
-        await postAnswer(
-          jsonRequest("/api/session/check/answer", { answer: "right" }),
-        )
-      ).json();
+    for (const next of [
+      { exposition: "E2", question: "Q-softmax?" },
+      { exposition: "E3", question: "Q-attention?" },
+    ]) {
+      state = await passAndMoveOn(next);
     }
+    // Attention is the last Concept: leaving it completes the Session.
+    state = await passAndMoveOn({ recap: "The recap!" });
 
     const reloaded = await expectResumeMatches(state!);
     expect(reloaded.session.phase).toBe("complete");

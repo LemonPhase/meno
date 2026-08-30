@@ -1,5 +1,6 @@
 import { lessonReply } from "@/ai/lesson";
 import { sessionIdFrom } from "@/lib/api";
+import { passedCheck } from "@/lib/checks";
 import {
   appendLessonMessages,
   getSessionState,
@@ -32,18 +33,27 @@ export async function POST(request: Request) {
   const lesson = state.lessons.find(
     (l) => l.conceptId === session.activeConceptId,
   )!;
+  const text = message.trim();
 
   const { reply } = await lessonReply({
     topic: session.topic,
     concept: { label: concept.label, summary: concept.summary },
     lesson: { messages: lesson.messages },
-    message: message.trim(),
+    message: text,
+    // Once the Check is passed there is nothing left to be tested on, and
+    // the control that would do it is gone from the page — so the reply
+    // must stop offering it.
+    passed: passedCheck(state.checks, concept.id) !== undefined,
   });
 
   await appendLessonMessages(session.id, concept.id, [
-    lessonMessage("user", message.trim()),
+    lessonMessage("user", text),
     lessonMessage("reply", reply),
   ]);
+
+  // The Check is deliberately left alone here. It asks what the exposition
+  // taught, not what this learner happened to ask about, so conversation
+  // never reshapes the bar they are held to — see @/lib/checks.
 
   return Response.json(await getSessionState(session.id));
 }

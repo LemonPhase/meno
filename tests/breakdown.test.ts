@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { clearScriptedResponses, scriptModelResponse } from "@/ai/scripted";
 import { POST as postBreakdown } from "@/app/api/session/breakdown/route";
+import { POST as postCheck } from "@/app/api/session/check/route";
+import { POST as postAnswer } from "@/app/api/session/check/answer/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef, humanizeLabel } from "@/lib/store";
-import { reachLearning, type StateBody } from "./helpers";
+import { jsonRequest, reachLearning, type StateBody } from "./helpers";
 
 // "Break it down": too hard means a prerequisite is missing, so the answer
 // is an insert_remedial Adjustment (ADR-0001) — never a restructuring of
@@ -19,6 +21,24 @@ const byLabel = (s: StateBody, label: string) =>
   s.concepts.find((c) => c.label === label)!;
 
 describe("POST /api/session/breakdown", () => {
+  it("is refused once the Concept's Check is passed", async () => {
+    const state = await reachLearning();
+    await postCheck();
+    scriptModelResponse(JSON.stringify({ verdict: "pass", feedback: "Yes." }));
+    await postAnswer(
+      jsonRequest("/api/session/check/answer", { answer: "right" }),
+    );
+
+    // The control is gone from a client that has seen the pass, so this can
+    // only come from one that has not. Nothing scripted: it must not reach
+    // the model, let alone splice a prerequisite in front of a Concept the
+    // learner has just demonstrated.
+    const res = await postBreakdown();
+    expect(res.status).toBe(409);
+    const after: StateBody = await (await postCheck()).json();
+    expect(after.concepts).toHaveLength(state.concepts.length);
+  });
+
   it("splices a remedial in after the Active Concept and leaves it Active", async () => {
     const state = await reachLearning();
     const active = byLabel(state, "Dot product");

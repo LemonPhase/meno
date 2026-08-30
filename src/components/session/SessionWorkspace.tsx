@@ -6,10 +6,11 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import LessonFlow, { EventLine } from "@/components/session/LessonFlow";
+import LessonFlow from "@/components/session/LessonFlow";
 import Markdown from "@/components/session/Markdown";
 import PathRail from "@/components/session/PathRail";
 import TopicEntry from "@/components/session/TopicEntry";
+import { passedCheck, revealedCheck } from "@/lib/checks";
 import type { Check, Lesson, Session, SessionConcept } from "@/lib/types";
 import { announceSessionsChanged, roman } from "@/lib/ui";
 
@@ -30,6 +31,7 @@ const THINKING: Record<string, string> = {
   answer: "Reading your answer",
   check: "Writing a check",
   advance: "Preparing the first lesson",
+  next: "Preparing what comes next",
   breakdown: "Finding what is missing",
 };
 
@@ -119,6 +121,16 @@ export default function SessionWorkspace({
   // Sessions run concurrently, so every call says which one it is about.
   const target = sessionId ?? state.session?.id;
 
+  /** Take the server's word for where this Session is. */
+  async function refetch(): Promise<void> {
+    try {
+      const res = await fetch(sessionUrl(target));
+      if (res.ok) setState(await res.json());
+    } catch {
+      // Leave what we have; the next focus tries again.
+    }
+  }
+
   async function call(
     label: string,
     url: string,
@@ -142,6 +154,11 @@ export default function SessionWorkspace({
         // An error body isn't always JSON (a crashed route returns HTML),
         // so fall back to the status rather than throwing over the throw.
         const detail = await res.json().catch(() => null);
+        // Every 409 here means the same thing: this client is behind. Another
+        // tab moved the Session on, answered the Check, or passed the Concept
+        // whose lever we just pulled. Take the correction, so the control
+        // that failed goes away instead of failing again on the next press.
+        if (res.status === 409) await refetch();
         throw new Error(detail?.error ?? `${res.status} ${res.statusText}`);
       }
       setState(await res.json());
@@ -459,32 +476,24 @@ function Learning({
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lesson = state.lessons.find((l) => l.conceptId === active.id);
-  const pendingCheck = state.checks.find(
-    (c) =>
-      c.phase === "mastery" &&
-      c.conceptIds.includes(active.id) &&
-      c.verdict === null,
-  );
+  // Only a *revealed* Check — one already shown as a check-question message
+  // — puts the composer in answer mode. A Check may also sit primed and
+  // unrevealed (written with the exposition so "Test me" is instant); that
+  // one is not yet anything the learner has been asked.
+  const pendingCheck = lesson
+    ? revealedCheck(state.checks, lesson.messages, active.id)
+    : undefined;
+  // Passing offers the way out; it does not take it. From here the learner
+  // can go on asking as long as they like, and the offer stays up.
+  const passed = passedCheck(state.checks, active.id);
+  const onward = path.some((c) => c.status === "locked")
+    ? "Next concept"
+    : "Finish the path";
 
   const byId = new Map(state.concepts.map((c) => [c.id, c]));
   const reqs = active.requires
     .map((r) => byId.get(r)?.label)
     .filter(Boolean) as string[];
-
-  // What just happened before this folio: the previous Path Concept's
-  // unlock (or skip) renders as a quiet event marker above the lesson.
-  const prev = folio >= 2 ? path[folio - 2] : null;
-  const before =
-    prev && prev.status === "unlocked" ? (
-      <EventLine
-        text={
-          prev.skipped
-            ? `${prev.label} marked known · skipped`
-            : `${prev.label} unlocked`
-        }
-        kind="mark"
-      />
-    ) : undefined;
 
   async function send() {
     const text = input.trim();
@@ -507,6 +516,15 @@ function Learning({
   return (
     <>
       <div className="flow">
+        <div className="concept-head">
+          <span className="kicker sc">
+            Concept {roman(folio)}
+            {reqs.length > 0 && ` · requires ${reqs.join(" & ")}`}
+            {active.origin === "remedial" && " · detour"}
+          </span>
+          <h2 className="h-concept">{active.label}</h2>
+          <p className="concept-summary">{active.summary}</p>
+        </div>
         {resumeNote && (
           <div className="notice fade-in">
             <span>
@@ -519,18 +537,11 @@ function Learning({
             </button>
           </div>
         )}
-        <span className="kicker sc">
-          Concept {roman(folio)}
-          {reqs.length > 0 && ` · requires ${reqs.join(" & ")}`}
-          {active.origin === "remedial" && " · detour"}
-        </span>
-        <h2 className="h-concept">{active.label}</h2>
         <LessonFlow
           messages={lesson.messages}
           checks={state.checks}
           animateAfter={animateAfter}
           busy={busy ? (THINKING[busy] ?? null) : null}
-          before={before}
         />
       </div>
 
@@ -567,19 +578,36 @@ function Learning({
             </button>
           </div>
         </div>
-        {/* The guidance line is the control: these two act on the Concept,
-            not on what you typed, so they sit outside the field. */}
+        {/* The guidance line is the control: these act on the Concept, not on
+            what you typed, so they sit outside the field. */}
         <div className="hint">
           <span>
             {pendingCheck ? (
               "Answer in your own words — you can attempt this as many times as you like."
+            ) : passed ? (
+              // Both levers are spent once the Check is passed: there is
+              // nothing left to be tested on, and a Concept the learner has
+              // demonstrated is not one to insert a prerequisite before.
+              // Questions still go in the composer; only the way out is
+              // offered here.
+              <>
+                Passed ·{" "}
+                <button
+                  className="hint-act onward"
+                  disabled={!!busy}
+                  title="You have passed this concept's check, so it is yours whenever you leave. Stay and ask as much as you want — this stays here."
+                  onClick={() => call("next", "/api/session/advance")}
+                >
+                  {onward} →
+                </button>
+              </>
             ) : (
               <>
                 Too easy?{" "}
                 <button
                   className="hint-act"
                   disabled={!!busy}
-                  title="Skip the teaching, not the verification: ask for the mastery check whenever you feel ready — pass it and the concept unlocks. You can attempt it as many times as you like."
+                  title="Skip the teaching, not the verification: ask for the mastery check whenever you feel ready. Pass it and you can move on whenever you like; there is one question per concept, and you can attempt it as many times as you need."
                   onClick={() => call("check", "/api/session/check")}
                 >
                   Test me

@@ -14,3 +14,28 @@ this Concept is wrong.
 
 It does cost one extra model round-trip, but only when the learner asks for
 it, so the no-extra-latency property of the graded path is preserved.
+
+## Addendum — `skip_next` rides only a pass (2026-08-30)
+
+`skip_next` used to fire on either verdict, on the reasoning that the verdict
+judges *this* Concept while the Adjustment observes whatever else the answer
+revealed. It now fires only when the answer passes.
+
+The Path is a prerequisite claim: each Concept on it is a prerequisite of the
+one after. So an answer that fails the Active Concept while appearing to
+demonstrate the next one is not a licence to skip ahead — it is evidence the
+Path was built wrong, or that the diagnostic was not thorough enough. The
+right response to that is to teach this Concept properly, not to hand the
+learner the next one on the strength of an answer that just failed.
+
+`skip_next` is now what it should always have been: a safety net for genuine
+familiarity, where the learner answers this Concept's Check completely *and*
+demonstrates the next just as completely. `insert_remedial` is unchanged and
+still rides either verdict — a failed answer revealing a specific gap is
+exactly when a detour is right.
+
+This also closes a real defect. Attempts on a Check are uncapped and re-ask
+the same question, so a learner failing the same Concept three times could
+draw three separate `skip_next` calls, each aimed at whatever was next by
+then — unlocking three untaught Concepts, Graph-wide and durable, for a
+learner who had demonstrated nothing.

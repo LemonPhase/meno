@@ -1,7 +1,6 @@
-import { generateMasteryCheck, gradeMasteryCheck } from "@/ai/lesson";
+import { gradeMasteryCheck } from "@/ai/lesson";
 import { sessionIdFrom } from "@/lib/api";
 import { revealedCheck } from "@/lib/checks";
-import { advanceToNextConcept } from "@/lib/progression";
 import {
   appendLessonMessages,
   formatEditContext,
@@ -9,17 +8,17 @@ import {
   getRecentEdits,
   lessonMessage,
   nextLockedConcept,
-  recordCheckResult,
+  claimCheckResult,
   saveMasteryCheck,
   skipNextConcept,
   spliceRemedialConcept,
-  unlockConcept,
 } from "@/lib/store";
 
 /**
- * Answer the pending mastery Check. A fail returns to open conversation;
- * a pass Unlocks the Concept — across the Graph, so every other Session's
- * Path sees it as already known — and moves this Session forward.
+ * Answer the pending mastery Check. Either verdict ends here, in feedback:
+ * a fail primes the same question for another attempt, a pass offers the
+ * move to the next Concept without taking it. Leaving is the learner's to
+ * choose and is its own request — see the advance route.
  */
 export async function POST(request: Request) {
   let body: Record<string, unknown>;
@@ -69,7 +68,15 @@ export async function POST(request: Request) {
     editContext: formatEditContext(await getRecentEdits()),
   });
 
-  await recordCheckResult(check.id, answer.trim(), grade.verdict);
+  // The Check is answered once. Claiming it before anything else is written
+  // keeps a second answer in flight from grading into the same transcript
+  // and applying a second Adjustment off the same stale Session.
+  if (!(await claimCheckResult(check.id, answer.trim(), grade.verdict))) {
+    return Response.json(
+      { error: "this Check has already been answered" },
+      { status: 409 },
+    );
+  }
   await appendLessonMessages(session.id, concept.id, [
     lessonMessage("check-answer", answer.trim(), check.id),
     lessonMessage("check-feedback", grade.feedback, check.id),
@@ -87,7 +94,13 @@ export async function POST(request: Request) {
     await appendLessonMessages(session.id, concept.id, [
       lessonMessage("event", `Detour queued · ${remedial.label}`),
     ]);
-  } else if (grade.adjustment === "skip_next") {
+    // The skip rides a pass only. Each Concept on the Path is a prerequisite
+    // of the one after it, so an answer that fails this Concept while
+    // seeming to know the next says the Path is wrong — not that the learner
+    // may move past it. Attempts are uncapped and re-ask the same question,
+    // so honouring it on fails also let three failures unlock three untaught
+    // Concepts, Graph-wide and for good. See ADR-0001's 2026-08-30 addendum.
+  } else if (grade.adjustment === "skip_next" && grade.verdict === "pass") {
     const skipped = await skipNextConcept(session, state.concepts);
     if (skipped) {
       await appendLessonMessages(session.id, concept.id, [
@@ -96,26 +109,11 @@ export async function POST(request: Request) {
     }
   }
 
-  if (grade.verdict === "pass") {
-    await unlockConcept(concept.id);
-    const refreshed = await getSessionState(session.id);
-    await advanceToNextConcept(refreshed.session!, refreshed.concepts);
-  } else {
-    // A fail returns to open conversation and can be retried right away —
-    // keep a fresh mastery Check primed for that, the same as any other
-    // turn (see @/lib/checks).
-    const { question } = await generateMasteryCheck({
-      topic: session.topic,
-      concept: { label: concept.label, summary: concept.summary },
-      lesson: {
-        messages: [
-          ...lesson.messages,
-          lessonMessage("check-answer", answer.trim(), check.id),
-          lessonMessage("check-feedback", grade.feedback, check.id),
-        ],
-      },
-    });
-    await saveMasteryCheck(session.id, concept.id, question);
+  // A fail returns to open conversation and can be attempted again right
+  // away: the Concept's one question is primed afresh, unchanged, with this
+  // attempt and its feedback now standing above it in the Lesson.
+  if (grade.verdict !== "pass") {
+    await saveMasteryCheck(session.id, concept.id, check.question);
   }
 
   return Response.json(await getSessionState(session.id));

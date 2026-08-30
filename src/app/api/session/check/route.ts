@@ -1,6 +1,11 @@
 import { generateMasteryCheck } from "@/ai/lesson";
 import { sessionIdFrom } from "@/lib/api";
-import { primedCheck, revealedCheck } from "@/lib/checks";
+import {
+  conceptQuestion,
+  passedCheck,
+  primedCheck,
+  revealedCheck,
+} from "@/lib/checks";
 import {
   appendLessonMessages,
   getSessionState,
@@ -12,8 +17,10 @@ import {
  * The user asks to be tested on the Active Concept — the "too easy" route
  * as much as the ready-to-be-tested one. Idempotent: a mastery Check
  * already revealed is returned rather than regenerated. The common case is
- * a Check already primed (kept current turn by turn — see @/lib/checks),
- * so this just reveals it; generating one here is only a fallback.
+ * a Check already primed with the exposition (see @/lib/checks), so this
+ * just reveals it; generating one here is the fallback for a Concept that
+ * has none — a Lesson from before Checks were primed, or one whose primed
+ * Check was lost.
  */
 export async function POST(request?: Request) {
   let body: Record<string, unknown> = {};
@@ -41,14 +48,28 @@ export async function POST(request?: Request) {
   if (revealedCheck(state.checks, lesson.messages, concept.id)) {
     return Response.json(state);
   }
+  // Already passed: there is one question per Concept and it has been
+  // answered. Returning the state unchanged keeps this idempotent rather
+  // than quietly inventing a second question.
+  if (passedCheck(state.checks, concept.id)) {
+    return Response.json(state);
+  }
 
   let check = primedCheck(state.checks, lesson.messages, concept.id);
   if (!check) {
-    const { question } = await generateMasteryCheck({
-      topic: session.topic,
-      concept: { label: concept.label, summary: concept.summary },
-      lesson: { messages: lesson.messages },
-    });
+    // A Concept keeps its question. Writing a new one is only for a Concept
+    // that has never had a Check at all — a Lesson from before Checks were
+    // primed. Anything else re-primes what it already asked, so the "never
+    // rewritten" invariant does not depend on nothing having gone wrong.
+    const question =
+      conceptQuestion(state.checks, concept.id) ??
+      (
+        await generateMasteryCheck({
+          topic: session.topic,
+          concept: { label: concept.label, summary: concept.summary },
+          lesson: { messages: lesson.messages },
+        })
+      ).question;
     check = await saveMasteryCheck(session.id, concept.id, question);
   }
 

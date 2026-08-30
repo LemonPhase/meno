@@ -2,6 +2,8 @@ import { promptText, scriptModelResponse } from "@/ai/scripted";
 import { POST as postSessionRoute } from "@/app/api/session/route";
 import { POST as postDiagnosticRoute } from "@/app/api/session/diagnostic/route";
 import { POST as postAdvanceRoute } from "@/app/api/session/advance/route";
+import { POST as postCheckRoute } from "@/app/api/session/check/route";
+import { POST as postAnswerRoute } from "@/app/api/session/check/answer/route";
 import { revealedCheck } from "@/lib/checks";
 import type { Check, Lesson, Session, SessionConcept } from "@/lib/types";
 
@@ -164,4 +166,45 @@ export async function startOverlappingSession(
     throw new Error(`startOverlappingSession failed: ${res.status}`);
   }
   return res.json();
+}
+
+/**
+ * Pass the Active Concept's mastery Check and then make the move a pass only
+ * *offers* — two requests, because leaving is the learner's to choose. `next`
+ * is what the Session generates on the way out: the following Concept's
+ * exposition and its one Check, or the Recap that closes a finished Path.
+ */
+export async function passAndMoveOn(
+  next: { exposition: string; question: string } | { recap: string },
+  opts: { grade?: Record<string, unknown>; sessionId?: string } = {},
+): Promise<StateBody> {
+  const { grade = {}, sessionId } = opts;
+  const scoped = (path: string) =>
+    sessionId
+      ? new Request(`http://test${path}?session=${sessionId}`, {
+          method: "POST",
+        })
+      : undefined;
+
+  // Whatever is Active already has its Check primed, so revealing is free.
+  await postCheckRoute(scoped("/api/session/check"));
+  scriptModelResponse(
+    JSON.stringify({ verdict: "pass", feedback: "Yes.", ...grade }),
+  );
+  const graded = await postAnswerRoute(
+    jsonRequest("/api/session/check/answer", {
+      answer: "right",
+      ...(sessionId ? { sessionId } : {}),
+    }),
+  );
+  if (graded.status !== 200) throw new Error(`answer failed: ${graded.status}`);
+
+  scriptModelResponse(
+    ...("recap" in next
+      ? [next.recap]
+      : [next.exposition, JSON.stringify({ question: next.question })]),
+  );
+  const moved = await postAdvanceRoute(scoped("/api/session/advance"));
+  if (moved.status !== 200) throw new Error(`advance failed: ${moved.status}`);
+  return moved.json();
 }

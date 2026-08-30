@@ -3,7 +3,6 @@ import {
   activateConcept,
   completeSession,
   nextLockedConcept,
-  saveMasteryCheck,
 } from "./store";
 import type { Concept, Session } from "./types";
 
@@ -11,11 +10,16 @@ import type { Concept, Session } from "./types";
  * Move the Session forward: activate the next Concept on its Path still to
  * be learned (generating its exposition lazily), or — when the Path is
  * finished — complete the Session with a Recap.
+ *
+ * `from` is the Concept being left, null when leaving the Path preview. It
+ * is what the commit is guarded on, so this reports false when the Session
+ * has already moved out from under the caller and nothing was written.
  */
 export async function advanceToNextConcept(
   session: Session,
   concepts: Concept[],
-): Promise<void> {
+  from: string | null,
+): Promise<boolean> {
   const next = nextLockedConcept(session, concepts);
   const unlocked = concepts.filter((c) => c.unlocked);
   if (next) {
@@ -24,15 +28,19 @@ export async function advanceToNextConcept(
       concept: { label: next.label, summary: next.summary },
       unlockedLabels: unlocked.map((c) => c.label),
     });
-    await activateConcept(session, next.id, exposition);
-    // The mastery Check is primed right alongside, so "Test me" is instant
-    // the moment this Concept becomes Active — see @/lib/checks.
+    // The Concept's one mastery question is written against the exposition
+    // it will test, so the learner is asked about what they were actually
+    // shown rather than about the summary the Path was planned from. It is
+    // primed here so "Test me" is instant — see @/lib/checks.
     const { question } = await generateMasteryCheck({
       topic: session.topic,
       concept: { label: next.label, summary: next.summary },
-      lesson: { messages: [] },
+      lesson: { messages: [{ kind: "exposition", text: exposition }] },
     });
-    await saveMasteryCheck(session.id, next.id, question);
+    // Both model calls land before anything is written, and the writes go
+    // in as one guarded commit: a failure here leaves the Session exactly
+    // where it stood, with the move still to make.
+    return activateConcept(session, from, next.id, exposition, question);
   } else {
     const onPath = new Map(session.path.map((e, i) => [e.conceptId, { i, e }]));
     const { recap } = await writeRecap({
@@ -49,6 +57,6 @@ export async function advanceToNextConcept(
           origin: onPath.get(c.id)?.e.origin ?? "planned",
         })),
     });
-    await completeSession(session, recap);
+    return completeSession(session, from, recap);
   }
 }

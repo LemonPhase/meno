@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Seed the Firestore emulator with a Graph that exercises every UI state,
-// so working on the interface needs no model calls at all: two Sessions
-// (one mid-Path, one complete), a remedial detour, both kinds of skip,
-// Lessons with markdown and mathematics, Checks, and an Edit.
+// so working on the interface needs no model calls at all: three Sessions
+// (one mid-Path with its Check still to face, one mid-Path with it passed
+// and the move on offer, one complete), a remedial detour, both kinds of
+// skip, Lessons with markdown and mathematics, Checks, and an Edit.
 //
 //   npm run seed          seed alongside whatever is already there
 //   npm run seed -- --reset   wipe the Graph first
@@ -216,6 +217,81 @@ put("lessons", `${S2}__${S2}_qkv`, {
     },
     { kind: "event", text: "Softmax and Scaling skipped — you already had it", createdAt: at(1) },
   ],
+});
+
+// Primed, not revealed: a Concept's one mastery question is written with
+// its exposition and waits there, so "Test me" costs nothing. Absent from
+// the Lesson's messages is exactly what makes it primed rather than asked.
+put("checks", "seed-check-2", {
+  id: "seed-check-2",
+  sessionId: S2,
+  phase: "mastery",
+  conceptIds: [`${S2}_qkv`],
+  question: "If the query and key projections were the same matrix, what would break?",
+  answer: null,
+  verdict: null,
+  createdAt: at(),
+});
+
+/* ---------- Session three: learning, Check passed, free to move on ---------- */
+
+const S3 = "seed-bayes";
+const bayes = [
+  ["conditional", "Conditional Probability", "Restricting the sample space to what you already know.", [], "unlocked"],
+  ["bayes", "Bayes' Rule", "Inverting a conditional by weighting it with the prior.", ["conditional"], "active"],
+  ["posterior", "Posterior Predictive", "Averaging predictions over what you still don't know.", ["bayes"], "locked"],
+];
+for (const [key, label, summary, requires, state] of bayes) {
+  concept({
+    id: `${S3}_${key}`,
+    label,
+    summary,
+    unlocked: state === "unlocked",
+    skipped: false,
+    requires: requires.map((r) => `${S3}_${r}`),
+    originSessionId: S3,
+    createdAt: at(1),
+  });
+}
+
+put("sessions", S3, {
+  id: S3,
+  topic: "bayesian inference",
+  phase: "learning",
+  activeConceptId: `${S3}_bayes`,
+  recap: null,
+  conceptIds: bayes.map(([k]) => `${S3}_${k}`),
+  path: bayes.map(([k]) => ({ conceptId: `${S3}_${k}`, origin: "planned" })),
+  createdAt: at(30),
+});
+
+put("lessons", `${S3}__${S3}_bayes`, {
+  sessionId: S3,
+  conceptId: `${S3}_bayes`,
+  messages: [
+    {
+      kind: "exposition",
+      text: "Bayes' rule is conditional probability read backwards:\n\n$$\nP(H \\mid E) = \\frac{P(E \\mid H)\\,P(H)}{P(E)}\n$$\n\nThe **likelihood** $P(E \\mid H)$ says how well the hypothesis explains what you saw; the **prior** $P(H)$ says how much you believed it beforehand. Their product, normalised, is the **posterior**.",
+      createdAt: at(),
+    },
+    { kind: "check-question", text: "A test with a 1% false positive rate comes back positive for a disease affecting 1 in 10,000. Why is the posterior still small?", checkId: "seed-check-3", createdAt: at(2) },
+    { kind: "check-answer", text: "Because the prior is tiny, so most positives are false ones from the huge healthy group.", createdAt: at(1) },
+    { kind: "check-feedback", text: "Right — the base rate does the work. Worth carrying forward: 100 false positives against 1 true one is the whole of the argument, and it is the *ratio* of those counts, not either alone, that the posterior reports.", checkId: "seed-check-3", createdAt: at(1) },
+  ],
+});
+
+// Passed, and the Concept still Active: the learner has earned the move to
+// the next Concept and has not taken it. This is the state the "Next
+// concept" offer renders from — see passedCheck in @/lib/checks.
+put("checks", "seed-check-3", {
+  id: "seed-check-3",
+  sessionId: S3,
+  phase: "mastery",
+  conceptIds: [`${S3}_bayes`],
+  question: "A test with a 1% false positive rate comes back positive for a disease affecting 1 in 10,000. Why is the posterior still small?",
+  answer: "Because the prior is tiny, so most positives are false ones from the huge healthy group.",
+  verdict: "pass",
+  createdAt: at(),
 });
 
 put("edits", "seed-edit-1", {

@@ -378,28 +378,53 @@ export { message as lessonMessage };
  * Lesson opens with the exposition. (Lazy generation: the exposition is
  * produced only now, when the Concept is reached.)
  */
+/**
+ * Commit a move to the next Concept: Unlock the one being left, open the
+ * next one's Lesson with its exposition, and prime its one mastery Check.
+ * Reports whether this call is the one that moved the Session.
+ *
+ * Everything the model had to write is already written by the time this
+ * runs, so the move lands whole or not at all — a failed generation leaves
+ * the Session exactly where it stood, free to try again.
+ *
+ * The guard is the Session's own position, not the Graph's Unlocked flag.
+ * Unlocking is Graph-wide and durable, so a Concept some *other* Session has
+ * already Unlocked would read as "this move is already done" and strand a
+ * Session that had legitimately just passed its own Check on it.
+ *
+ * `from` is the Concept being left — null when leaving the Path preview.
+ */
 export async function activateConcept(
   session: Session,
+  from: string | null,
   conceptId: string,
   exposition: string,
+  question: string,
   graphId: string = DEMO_USER_ID,
-): Promise<void> {
+): Promise<boolean> {
   const graph = graphRef(graphId);
+  const sessionRef = graph.collection("sessions").doc(session.id);
   const lesson: Lesson = {
     conceptId,
     sessionId: session.id,
     messages: [message("exposition", exposition)],
   };
-  const batch = db.batch();
-  batch.set(
-    graph.collection("lessons").doc(lessonKey(session.id, conceptId)),
-    lesson,
-  );
-  batch.update(graph.collection("sessions").doc(session.id), {
-    phase: "learning",
-    activeConceptId: conceptId,
+  const check = masteryCheck(session.id, conceptId, question);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(sessionRef);
+    const current = snap.data() as Session | undefined;
+    if (!current || (current.activeConceptId ?? null) !== from) return false;
+    if (from) {
+      tx.update(graph.collection("concepts").doc(from), { unlocked: true });
+    }
+    tx.set(
+      graph.collection("lessons").doc(lessonKey(session.id, conceptId)),
+      lesson,
+    );
+    tx.set(graph.collection("checks").doc(check.id), check);
+    tx.update(sessionRef, { phase: "learning", activeConceptId: conceptId });
+    return true;
   });
-  await batch.commit();
 }
 
 export async function appendLessonMessages(
@@ -421,56 +446,53 @@ export async function appendLessonMessages(
   });
 }
 
+const masteryCheck = (
+  sessionId: string,
+  conceptId: string,
+  question: string,
+): Check => ({
+  id: randomUUID(),
+  sessionId,
+  phase: "mastery",
+  conceptIds: [conceptId],
+  question,
+  answer: null,
+  verdict: null,
+  createdAt: Date.now(),
+});
+
 export async function saveMasteryCheck(
   sessionId: string,
   conceptId: string,
   question: string,
   graphId: string = DEMO_USER_ID,
 ): Promise<Check> {
-  const check: Check = {
-    id: randomUUID(),
-    sessionId,
-    phase: "mastery",
-    conceptIds: [conceptId],
-    question,
-    answer: null,
-    verdict: null,
-    createdAt: Date.now(),
-  };
+  const check = masteryCheck(sessionId, conceptId, question);
   await graphRef(graphId).collection("checks").doc(check.id).set(check);
   return check;
 }
 
-/** Replace a primed (unrevealed) Check's question in place as context grows. */
-export async function updateCheckQuestion(
-  checkId: string,
-  question: string,
-  graphId: string = DEMO_USER_ID,
-): Promise<void> {
-  await graphRef(graphId).collection("checks").doc(checkId).update({ question });
-}
-
-export async function recordCheckResult(
+/**
+ * Record an attempt's answer and verdict, reporting whether this call is the
+ * one that recorded it. A Check is answered exactly once: two answers in
+ * flight would otherwise both grade, both append to the Lesson, and both
+ * apply an Adjustment computed from the same stale Session — the second
+ * overwriting the first's Path while the remedial Concept it had already
+ * created stayed in the Graph, on no Path at all.
+ */
+export async function claimCheckResult(
   checkId: string,
   answer: string,
   verdict: "pass" | "fail",
   graphId: string = DEMO_USER_ID,
-): Promise<void> {
-  await graphRef(graphId)
-    .collection("checks")
-    .doc(checkId)
-    .update({ answer, verdict });
-}
-
-/** Unlock a Concept after a passed mastery Check — true across the Graph. */
-export async function unlockConcept(
-  conceptId: string,
-  graphId: string = DEMO_USER_ID,
-): Promise<void> {
-  await graphRef(graphId)
-    .collection("concepts")
-    .doc(conceptId)
-    .update({ unlocked: true });
+): Promise<boolean> {
+  const ref = graphRef(graphId).collection("checks").doc(checkId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists || snap.data()!.verdict !== null) return false;
+    tx.update(ref, { answer, verdict });
+    return true;
+  });
 }
 
 /**
@@ -574,15 +596,32 @@ export async function skipNextConcept(
   return next;
 }
 
+/**
+ * Close a finished Path with its Recap, Unlocking the last Concept on the
+ * way out. The same guarded commit as activateConcept — leaving the final
+ * Concept is still a move, and still the learner's to make once.
+ */
 export async function completeSession(
   session: Session,
+  from: string | null,
   recap: string,
   graphId: string = DEMO_USER_ID,
-): Promise<void> {
-  await graphRef(graphId).collection("sessions").doc(session.id).update({
-    phase: "complete",
-    activeConceptId: null,
-    recap,
+): Promise<boolean> {
+  const graph = graphRef(graphId);
+  const sessionRef = graph.collection("sessions").doc(session.id);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(sessionRef);
+    const current = snap.data() as Session | undefined;
+    if (!current || (current.activeConceptId ?? null) !== from) return false;
+    if (from) {
+      tx.update(graph.collection("concepts").doc(from), { unlocked: true });
+    }
+    tx.update(sessionRef, {
+      phase: "complete",
+      activeConceptId: null,
+      recap,
+    });
+    return true;
   });
 }
 

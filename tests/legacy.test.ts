@@ -3,6 +3,9 @@ import { clearScriptedResponses, scriptModelResponse } from "@/ai/scripted";
 import { GET } from "@/app/api/session/route";
 import { GET as getSessions } from "@/app/api/sessions/route";
 import { POST as postLesson } from "@/app/api/session/lesson/route";
+import { POST as postCheck } from "@/app/api/session/check/route";
+import { POST as postAnswer } from "@/app/api/session/check/answer/route";
+import { POST as postAdvance } from "@/app/api/session/advance/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import type { SessionSummary } from "@/lib/types";
@@ -109,13 +112,48 @@ describe("a Graph written before ADR-0004", () => {
     expect(sessions[0].unlockedCount).toBe(1);
   });
 
+  it("carries a legacy Session through the whole Learning flow", async () => {
+    await seedLegacyGraph();
+
+    // Its Concepts predate primed Checks, so the first "Test me" is the
+    // fallback that writes one. From there the new flow has to hold: the
+    // pass offers the move, the move Unlocks and activates, and the last
+    // one closes with a Recap.
+    scriptModelResponse(JSON.stringify({ question: "Legacy check?" }));
+    expect((await postCheck()).status).toBe(200);
+
+    scriptModelResponse(JSON.stringify({ verdict: "pass", feedback: "Yes." }));
+    const graded: StateBody = await (
+      await postAnswer(
+        jsonRequest("/api/session/check/answer", { answer: "right" }),
+      )
+    ).json();
+    // A pass moves nobody, legacy Graph or not.
+    expect(graded.session.activeConceptId).toBe("c_active");
+
+    scriptModelResponse("Next exposition", JSON.stringify({ question: "Q?" }));
+    const moved: StateBody = await (await postAdvance()).json();
+    expect(moved.session.activeConceptId).toBe("c_next");
+    expect(moved.concepts.find((c) => c.id === "c_active")!.status).toBe(
+      "unlocked",
+    );
+
+    await postCheck();
+    scriptModelResponse(JSON.stringify({ verdict: "pass", feedback: "Yes." }));
+    await postAnswer(
+      jsonRequest("/api/session/check/answer", { answer: "right" }),
+    );
+    scriptModelResponse("A legacy recap.");
+    const done: StateBody = await (await postAdvance()).json();
+    expect(done.session.phase).toBe("complete");
+    expect(done.session.recap).toBe("A legacy recap.");
+    expect(done.concepts.every((c) => c.status === "unlocked")).toBe(true);
+  });
+
   it("appends to a Lesson that is still keyed by Concept alone", async () => {
     await seedLegacyGraph();
 
-    scriptModelResponse(
-      "A reply onto the legacy lesson.",
-      JSON.stringify({ question: "Q?" }),
-    );
+    scriptModelResponse("A reply onto the legacy lesson.");
     const res = await postLesson(
       jsonRequest("/api/session/lesson", { message: "why?" }),
     );

@@ -1,12 +1,10 @@
-import { generateMasteryCheck, lessonReply } from "@/ai/lesson";
+import { lessonReply } from "@/ai/lesson";
 import { sessionIdFrom } from "@/lib/api";
-import { primedCheck } from "@/lib/checks";
+import { passedCheck } from "@/lib/checks";
 import {
   appendLessonMessages,
   getSessionState,
   lessonMessage,
-  saveMasteryCheck,
-  updateCheckQuestion,
 } from "@/lib/store";
 
 /** Free-form conversation within the Active Concept's Lesson. */
@@ -42,6 +40,10 @@ export async function POST(request: Request) {
     concept: { label: concept.label, summary: concept.summary },
     lesson: { messages: lesson.messages },
     message: text,
+    // Once the Check is passed there is nothing left to be tested on, and
+    // the control that would do it is gone from the page — so the reply
+    // must stop offering it.
+    passed: passedCheck(state.checks, concept.id) !== undefined,
   });
 
   await appendLessonMessages(session.id, concept.id, [
@@ -49,21 +51,9 @@ export async function POST(request: Request) {
     lessonMessage("reply", reply),
   ]);
 
-  // The mastery Check stays attached to the conversation: regenerated
-  // alongside every reply so it reflects this turn, ready the instant
-  // the learner clicks "Test me" — see @/lib/checks.
-  const { question } = await generateMasteryCheck({
-    topic: session.topic,
-    concept: { label: concept.label, summary: concept.summary },
-    lesson: { messages: [...lesson.messages, lessonMessage("user", text)] },
-  });
-
-  const primed = primedCheck(state.checks, lesson.messages, concept.id);
-  if (primed) {
-    await updateCheckQuestion(primed.id, question);
-  } else {
-    await saveMasteryCheck(session.id, concept.id, question);
-  }
+  // The Check is deliberately left alone here. It asks what the exposition
+  // taught, not what this learner happened to ask about, so conversation
+  // never reshapes the bar they are held to — see @/lib/checks.
 
   return Response.json(await getSessionState(session.id));
 }

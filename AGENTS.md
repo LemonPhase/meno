@@ -5,6 +5,14 @@ actually right over a general one that might be — this codebase is young and
 changing your mind later is cheap, so bias toward landing something clear now
 rather than something clever eventually.
 
+- **A decision made in session outranks one already written down.** This
+  product is still being found, and it pivots mid-test. When something the
+  user decides now contradicts `CONTEXT.md`, an ADR, this file, or a comment,
+  the newer decision wins: implement it, then update the written version so
+  the two stop disagreeing. Say what the old text claimed and that you are
+  overriding it — but don't argue the user out of the change on the strength
+  of a document they are entitled to overrule.
+
 - **Read `CONTEXT.md` first.** It is the domain glossary and the source of
   truth for vocabulary; use its words in code and in what you write. The
   decisions in `docs/adr/` were expensive to reach — follow them, and don't

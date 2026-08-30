@@ -3,12 +3,12 @@ import { clearScriptedResponses, scriptModelResponse } from "@/ai/scripted";
 import { GET } from "@/app/api/session/route";
 import { POST as postDiagnostic } from "@/app/api/session/diagnostic/route";
 import { POST as postAdvance } from "@/app/api/session/advance/route";
-import { POST as postCheck } from "@/app/api/session/check/route";
-import { POST as postAnswer } from "@/app/api/session/check/answer/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import {
   jsonRequest,
+  passAndMoveOn,
+  reachLearning,
   startInvestigatedSession,
   startOverlappingSession,
   type StateBody,
@@ -23,6 +23,8 @@ beforeEach(async () => {
   await db.recursiveDelete(graphRef());
 });
 
+const stateOf = async (sessionId: string): Promise<StateBody> =>
+  (await GET(new Request(`http://test/api/session?session=${sessionId}`))).json();
 const byLabel = (s: StateBody, label: string) =>
   s.concepts.find((c) => c.label === label)!;
 
@@ -82,6 +84,53 @@ describe("Attach", () => {
     expect(byLabel(graded, "Softmax").order).toBeNull();
   });
 
+  it("a Session Active on a Concept another one Unlocks can still move on", async () => {
+    // Both Sessions reach the same Softmax. The first leaves it, Unlocking
+    // it across the Graph — but the second is standing on it and has its own
+    // Check to pass. Unlocked is a Graph fact; being ready to move on is a
+    // fact of one Session, and arbitrating the second with the first would
+    // strand a learner who had done everything asked of them.
+    const a = await reachLearning();
+    const aId = a.session.id;
+    const aOnSoftmax = await passAndMoveOn(
+      { exposition: "A softmax", question: "A softmax?" },
+      { sessionId: aId },
+    );
+    const softmaxId = aOnSoftmax.session.activeConceptId!;
+
+    const b = await startOverlappingSession();
+    const bId = b.session.id;
+    scriptModelResponse(JSON.stringify({ knownConceptIds: [] }));
+    await postDiagnostic(
+      jsonRequest("/api/session/diagnostic", {
+        sessionId: bId,
+        answers: b.checks.map((c) => ({ checkId: c.id, answer: "no idea" })),
+      }),
+    );
+    scriptModelResponse("B softmax", JSON.stringify({ question: "B softmax?" }));
+    await postAdvance(
+      new Request(`http://test/api/session/advance?session=${bId}`, {
+        method: "POST",
+      }),
+    );
+    expect(
+      (await stateOf(bId)).session.activeConceptId,
+    ).toBe(softmaxId);
+
+    // A finishes with Softmax and leaves it Unlocked Graph-wide.
+    await passAndMoveOn(
+      { exposition: "A attention", question: "A attention?" },
+      { sessionId: aId },
+    );
+
+    const bMoved = await passAndMoveOn(
+      { exposition: "B cross entropy", question: "B xent?" },
+      { sessionId: bId },
+    );
+    expect(bMoved.session.phase).toBe("learning");
+    expect(byLabel(bMoved, "Cross entropy").status).toBe("active");
+  });
+
   it("unlocking a shared Concept settles it for every Session holding it", async () => {
     const first = await startInvestigatedSession();
     const softmax = byLabel(first, "Softmax");
@@ -118,44 +167,16 @@ describe("Attach", () => {
         method: "POST",
       }),
     );
-    // Already primed alongside the advance above.
-    await postCheck(
-      new Request(`http://test/api/session/check?session=${first.session.id}`, {
-        method: "POST",
-      }),
+    const afterFirst = await passAndMoveOn(
+      { exposition: "Softmax exposition", question: "Q2?" },
+      { sessionId: first.session.id },
     );
-    scriptModelResponse(
-      JSON.stringify({ verdict: "pass", feedback: "Good." }),
-      "Softmax exposition",
-      JSON.stringify({ question: "Q2?" }),
-    );
-    const afterFirst: StateBody = await (
-      await postAnswer(
-        jsonRequest("/api/session/check/answer", {
-          sessionId: first.session.id,
-          answer: "a dot product is a scalar",
-        }),
-      )
-    ).json();
     expect(byLabel(afterFirst, "Softmax").status).toBe("active");
 
     // Unlocking is a Graph fact: pass Softmax in the first Session…
-    // Already primed alongside the pass above.
-    await postCheck(
-      new Request(`http://test/api/session/check?session=${first.session.id}`, {
-        method: "POST",
-      }),
-    );
-    scriptModelResponse(
-      JSON.stringify({ verdict: "pass", feedback: "Yes." }),
-      "Attention exposition",
-      JSON.stringify({ question: "Q3?" }),
-    );
-    await postAnswer(
-      jsonRequest("/api/session/check/answer", {
-        sessionId: first.session.id,
-        answer: "it normalizes scores",
-      }),
+    await passAndMoveOn(
+      { exposition: "Attention exposition", question: "Q3?" },
+      { sessionId: first.session.id },
     );
 
     // …and the second Session now shows it as already yours.

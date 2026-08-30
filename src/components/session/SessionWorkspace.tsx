@@ -6,11 +6,11 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import LessonFlow, { EventLine } from "@/components/session/LessonFlow";
+import LessonFlow from "@/components/session/LessonFlow";
 import Markdown from "@/components/session/Markdown";
 import PathRail from "@/components/session/PathRail";
 import TopicEntry from "@/components/session/TopicEntry";
-import { revealedCheck } from "@/lib/checks";
+import { passedCheck, revealedCheck } from "@/lib/checks";
 import type { Check, Lesson, Session, SessionConcept } from "@/lib/types";
 import { announceSessionsChanged, roman } from "@/lib/ui";
 
@@ -31,6 +31,7 @@ const THINKING: Record<string, string> = {
   answer: "Reading your answer",
   check: "Writing a check",
   advance: "Preparing the first lesson",
+  next: "Preparing what comes next",
   breakdown: "Finding what is missing",
 };
 
@@ -462,31 +463,22 @@ function Learning({
   const lesson = state.lessons.find((l) => l.conceptId === active.id);
   // Only a *revealed* Check — one already shown as a check-question message
   // — puts the composer in answer mode. A Check may also sit primed and
-  // unrevealed (kept current turn by turn so "Test me" is instant); that
+  // unrevealed (written with the exposition so "Test me" is instant); that
   // one is not yet anything the learner has been asked.
   const pendingCheck = lesson
     ? revealedCheck(state.checks, lesson.messages, active.id)
     : undefined;
+  // Passing offers the way out; it does not take it. From here the learner
+  // can go on asking as long as they like, and the offer stays up.
+  const passed = passedCheck(state.checks, active.id);
+  const onward = path.some((c) => c.status === "locked")
+    ? "Next concept"
+    : "Finish the path";
 
   const byId = new Map(state.concepts.map((c) => [c.id, c]));
   const reqs = active.requires
     .map((r) => byId.get(r)?.label)
     .filter(Boolean) as string[];
-
-  // What just happened before this folio: the previous Path Concept's
-  // unlock (or skip) renders as a quiet event marker above the lesson.
-  const prev = folio >= 2 ? path[folio - 2] : null;
-  const before =
-    prev && prev.status === "unlocked" ? (
-      <EventLine
-        text={
-          prev.skipped
-            ? `${prev.label} marked known · skipped`
-            : `${prev.label} unlocked`
-        }
-        kind="mark"
-      />
-    ) : undefined;
 
   async function send() {
     const text = input.trim();
@@ -535,7 +527,6 @@ function Learning({
           checks={state.checks}
           animateAfter={animateAfter}
           busy={busy ? (THINKING[busy] ?? null) : null}
-          before={before}
         />
       </div>
 
@@ -572,19 +563,44 @@ function Learning({
             </button>
           </div>
         </div>
-        {/* The guidance line is the control: these two act on the Concept,
-            not on what you typed, so they sit outside the field. */}
+        {/* The guidance line is the control: these act on the Concept, not on
+            what you typed, so they sit outside the field. */}
         <div className="hint">
           <span>
             {pendingCheck ? (
               "Answer in your own words — you can attempt this as many times as you like."
+            ) : passed ? (
+              // Break it down survives the pass. A pass can be generous
+              // about a thin answer, so "I passed and I am still lost" is a
+              // real place to be — and the detour is the only thing that
+              // answers it.
+              <>
+                Passed ·{" "}
+                <button
+                  className="hint-act onward"
+                  disabled={!!busy}
+                  title="You have passed this concept's check, so it is yours whenever you leave. Stay and ask as much as you want — this stays here."
+                  onClick={() => call("next", "/api/session/advance")}
+                >
+                  {onward} →
+                </button>{" "}
+                · Still lost?{" "}
+                <button
+                  className="hint-act"
+                  disabled={!!busy}
+                  title="Meno finds the prerequisite you are missing and teaches that first, as a short detour before this concept. The concept itself stays as it is."
+                  onClick={() => call("breakdown", "/api/session/breakdown")}
+                >
+                  Break it down
+                </button>
+              </>
             ) : (
               <>
                 Too easy?{" "}
                 <button
                   className="hint-act"
                   disabled={!!busy}
-                  title="Skip the teaching, not the verification: ask for the mastery check whenever you feel ready — pass it and the concept unlocks. You can attempt it as many times as you like."
+                  title="Skip the teaching, not the verification: ask for the mastery check whenever you feel ready. Pass it and you can move on whenever you like; there is one question per concept, and you can attempt it as many times as you need."
                   onClick={() => call("check", "/api/session/check")}
                 >
                   Test me

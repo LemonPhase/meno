@@ -289,6 +289,7 @@ export default function SessionWorkspace({
             session={session}
             concepts={state.concepts}
             checks={state.checks}
+            lessons={state.lessons}
             mode={session.phase === "complete" ? "complete" : "learning"}
             open={railOpen}
             onClose={() => setRailOpen(false)}
@@ -543,9 +544,9 @@ function Learning({
   // Going back is a move of the eye, not of the Session: an earlier Lesson
   // is re-read exactly as it was written; nothing re-activates or re-locks,
   // and the Graph is left standing. So there is no request to make — the
-  // state is the workspace's, which also drops it the moment the Session
-  // moves on. A detour splices in behind the Active Concept and rightly
-  // leaves a review standing: the Session has not moved.
+  // state is the workspace's, which drops it the moment the Session moves,
+  // whether that is the way on or a detour taking the learner under the
+  // Concept they were on.
   const lessonFor = (id: string) =>
     state.lessons.find((l) => l.conceptId === id);
   const reviewIdx = reviewing

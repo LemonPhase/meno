@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Seed the Firestore emulator with a Graph that exercises every UI state,
-// so working on the interface needs no model calls at all: three Sessions
+// so working on the interface needs no model calls at all: four Sessions
 // (one mid-Path with its Check still to face, one mid-Path with it passed
-// and the move on offer, one complete), a remedial detour, both kinds of
-// skip, Lessons with markdown and mathematics, Checks, and an Edit.
+// and the move on offer, one pulled onto a detour with the Concept it left
+// waiting, one complete), both kinds of skip, Lessons with markdown and
+// mathematics, Checks, and an Edit.
 //
 //   npm run seed              seed alongside whatever is already there
 //   npm run seed -- --reset   wipe the Graph first
@@ -93,7 +94,7 @@ const svm = [
   ["vector-space", "Vector Space", "A set closed under addition and scalar multiplication.", [], true],
   ["hyperplane", "Hyperplane", "A flat subspace one dimension below the space holding it.", ["vector-space"], true],
   ["hard-margin", "Hard Margin", "The widest separating slab when the data separates cleanly.", ["hyperplane"], true],
-  ["support-vectors", "Support Vectors", "The few points touching the margin, which alone determine it.", ["hard-margin"], true],
+  ["support-vectors", "Support Vectors", "The few points touching the margin, which alone determine it.", ["hard-margin", "rem_lagrange"], true],
   ["soft-margin", "Soft Margin", "Allowing bounded violations so noisy data still separates.", ["support-vectors"], true],
 ];
 for (const [key, label, summary, requires, unlocked] of svm) {
@@ -108,14 +109,15 @@ for (const [key, label, summary, requires, unlocked] of svm) {
     createdAt: at(2),
   });
 }
-// A remedial detour, spliced in after the learner asked to break it down.
+// A remedial detour: the learner asked to break support vectors down, so it
+// was spliced in *front* of that Concept, which came to require it.
 concept({
   id: `${S1}_rem_lagrange`,
   label: "Lagrange duality",
   summary: "Turning a constrained problem into its dual.",
   unlocked: true,
   skipped: false,
-  requires: [`${S1}_soft-margin`],
+  requires: [`${S1}_hard-margin`],
   originSessionId: S1,
   createdAt: at(2),
 });
@@ -138,10 +140,14 @@ put("sessions", S1, {
   activeConceptId: null,
   recap: "You built up from **vector spaces** to the margin itself, took a detour through Lagrange duality, and finished at the separating condition $\\mathbf{w}^\\top\\mathbf{x} + b = 0$.",
   conceptIds: [...svm.map(([k]) => `${S1}_${k}`), `${S1}_rem_lagrange`, `${S1}_calculus`],
-  path: [
-    ...svm.map(([k]) => ({ conceptId: `${S1}_${k}`, origin: "planned" })),
-    { conceptId: `${S1}_rem_lagrange`, origin: "remedial" },
-  ],
+  path: svm.flatMap(([k]) =>
+    k === "support-vectors"
+      ? [
+          { conceptId: `${S1}_rem_lagrange`, origin: "remedial" },
+          { conceptId: `${S1}_${k}`, origin: "planned" },
+        ]
+      : [{ conceptId: `${S1}_${k}`, origin: "planned" }],
+  ),
   createdAt: t0,
 });
 
@@ -365,6 +371,138 @@ put("checks", "seed-check-3", {
   createdAt: at(),
 });
 
+/* ------- Session four: learning, pulled off a Concept by a detour ------- */
+
+const S4 = "seed-descent";
+const REM = `${S4}_rem_slopes`;
+const descent = [
+  ["derivative", "Derivative as Slope", "How steeply a function climbs at a point.", [], "unlocked"],
+  // The detour, seated in front of the Concept it unblocks — which requires
+  // it, and which is Locked with its Lesson standing, waiting to be resumed.
+  ["gradient", "Gradient", "Every partial slope of a surface, read as one arrow.", ["derivative", "rem_slopes"], "locked"],
+  ["step", "Step Size", "How far to move along the gradient before looking again.", ["gradient"], "locked"],
+];
+for (const [key, label, summary, requires, state] of descent) {
+  concept({
+    id: `${S4}_${key}`,
+    label,
+    summary,
+    unlocked: state === "unlocked",
+    skipped: false,
+    requires: requires.map((r) => `${S4}_${r}`),
+    originSessionId: S4,
+    createdAt: at(1),
+  });
+}
+concept({
+  id: REM,
+  label: "Slope in two directions",
+  summary: "What it means to differentiate one variable and hold the rest still.",
+  unlocked: false,
+  skipped: false,
+  requires: [],
+  originSessionId: S4,
+  createdAt: at(1),
+});
+
+put("sessions", S4, {
+  id: S4,
+  topic: "gradient descent",
+  phase: "learning",
+  activeConceptId: REM,
+  recap: null,
+  conceptIds: [...descent.map(([k]) => `${S4}_${k}`), REM],
+  path: [
+    { conceptId: `${S4}_derivative`, origin: "planned" },
+    { conceptId: REM, origin: "remedial" },
+    { conceptId: `${S4}_gradient`, origin: "planned" },
+    { conceptId: `${S4}_step`, origin: "planned" },
+  ],
+  createdAt: at(20),
+});
+
+put("lessons", `${S4}__${S4}_derivative`, {
+  sessionId: S4,
+  conceptId: `${S4}_derivative`,
+  messages: [
+    { kind: "exposition", text: "The derivative at a point is the slope of the line that touches the curve there and nowhere near it:\n\n$$\nf'(x) = \\lim_{h \\to 0} \\frac{f(x+h) - f(x)}{h}\n$$\n\nPositive means climbing, negative means falling, and zero means flat — which is the whole of why we go looking for it.", createdAt: at() },
+    { kind: "check-question", text: "What does it mean for a derivative to be zero?", checkId: "seed-check-6", createdAt: at(2) },
+    { kind: "check-answer", text: "The curve is flat there — a peak, a trough, or a shelf.", checkId: "seed-check-6", createdAt: at(1) },
+    { kind: "check-feedback", text: "Right, and the three cases being indistinguishable from the slope alone is exactly the trouble descent runs into.", checkId: "seed-check-6", createdAt: at(1) },
+  ],
+});
+
+// Interrupted: taught, attempted, failed — and the grading pointed at the
+// missing prerequisite, which the learner then asked for. Its question is
+// primed again for the attempt still to come.
+put("lessons", `${S4}__${S4}_gradient`, {
+  sessionId: S4,
+  conceptId: `${S4}_gradient`,
+  messages: [
+    { kind: "exposition", text: "The **gradient** collects every partial derivative of a surface into one vector:\n\n$$\n\\nabla f = \\left( \\frac{\\partial f}{\\partial x_1}, \\dots, \\frac{\\partial f}{\\partial x_n} \\right)\n$$\n\nIt points the way of steepest ascent, and its length says how steep that is.", createdAt: at() },
+    { kind: "check-question", text: "Why is the gradient a vector rather than a number?", checkId: "seed-check-7", createdAt: at(2) },
+    { kind: "check-answer", text: "Because the surface is curved?", checkId: "seed-check-7", createdAt: at(1) },
+    { kind: "check-feedback", text: "Not quite — curvature is a separate matter. What is underneath this is partial derivatives: press **Break it down** and we will do those first, then come back to this.", checkId: "seed-check-7", createdAt: at(1) },
+    { kind: "user", text: "This is too hard — break it down.", createdAt: at(1) },
+    { kind: "event", text: "Detour · Slope in two directions first", createdAt: at(1) },
+  ],
+});
+
+put("lessons", `${S4}__${REM}`, {
+  sessionId: S4,
+  conceptId: REM,
+  messages: [
+    { kind: "event", text: "Detour from Gradient", createdAt: at() },
+    { kind: "reply", text: "The gap is one step earlier: the gradient is a *collection* of slopes, so the thing to settle first is what a single one of them means.", createdAt: at(1) },
+    { kind: "exposition", text: "A **partial derivative** asks the one-variable question of a many-variable function: move along $x_1$ only, hold everything else still, and measure the slope.\n\n$$\n\\frac{\\partial f}{\\partial x_1} = \\lim_{h \\to 0} \\frac{f(x_1 + h, x_2) - f(x_1, x_2)}{h}\n$$\n\nThere is one such slope per direction, which is why a surface has no single derivative to give.", createdAt: at(1) },
+  ],
+});
+
+put("checks", "seed-check-6", {
+  id: "seed-check-6",
+  sessionId: S4,
+  phase: "mastery",
+  conceptIds: [`${S4}_derivative`],
+  question: "What does it mean for a derivative to be zero?",
+  answer: "The curve is flat there — a peak, a trough, or a shelf.",
+  verdict: "pass",
+  createdAt: at(),
+});
+
+// The failed attempt, and the same question primed again for the way back:
+// one question per Concept, however many attempts it takes.
+put("checks", "seed-check-7", {
+  id: "seed-check-7",
+  sessionId: S4,
+  phase: "mastery",
+  conceptIds: [`${S4}_gradient`],
+  question: "Why is the gradient a vector rather than a number?",
+  answer: "Because the surface is curved?",
+  verdict: "fail",
+  createdAt: at(),
+});
+put("checks", "seed-check-8", {
+  id: "seed-check-8",
+  sessionId: S4,
+  phase: "mastery",
+  conceptIds: [`${S4}_gradient`],
+  question: "Why is the gradient a vector rather than a number?",
+  answer: null,
+  verdict: null,
+  createdAt: at(),
+});
+
+put("checks", "seed-check-9", {
+  id: "seed-check-9",
+  sessionId: S4,
+  phase: "mastery",
+  conceptIds: [REM],
+  question: "How many partial derivatives does a function of three variables have?",
+  answer: null,
+  verdict: null,
+  createdAt: at(),
+});
+
 put("edits", "seed-edit-1", {
   id: "seed-edit-1",
   conceptId: `${S2}_dot-product`,
@@ -387,3 +525,4 @@ console.log(
 );
 console.log(`Open:   http://localhost:3000/sessions/${S2}  (mid-Path, Check still to face)`);
 console.log(`        http://localhost:3000/sessions/${S3}  (Check passed, free to move on)`);
+console.log(`        http://localhost:3000/sessions/${S4}  (mid-detour, a Concept interrupted)`);

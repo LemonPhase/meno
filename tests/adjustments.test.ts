@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { clearScriptedResponses, scriptModelResponse } from "@/ai/scripted";
+import { POST as postAdvance } from "@/app/api/session/advance/route";
+import { POST as postBreakdown } from "@/app/api/session/breakdown/route";
 import { POST as postCheck } from "@/app/api/session/check/route";
 import { POST as postAnswer } from "@/app/api/session/check/answer/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef } from "@/lib/store";
 import {
+  FIRST_CHECK_QUESTION,
   USER,
   authed,
   jsonRequest,
@@ -27,11 +30,13 @@ const byLabel = (s: StateBody, label: string) =>
 
 async function answerWith(
   grade: { verdict: "pass" | "fail" } & Record<string, unknown>,
+  /** What a divert generates after grading, when this answer causes one. */
+  after: string[] = [],
 ): Promise<StateBody> {
   // Whatever Check is Active already has one primed — from reachLearning()
   // or the previous turn — so revealing it costs no model call.
   await postCheck(authed("/api/session/check"));
-  scriptModelResponse(JSON.stringify(grade));
+  scriptModelResponse(JSON.stringify(grade), ...after);
   const res = await postAnswer(
     jsonRequest("/api/session/check/answer", { answer: "my attempt" }),
   );
@@ -39,43 +44,68 @@ async function answerWith(
 }
 
 describe("Adjustment: insert_remedial", () => {
-  it("splices the remedial Concept in right after the Active one on a fail", async () => {
-    await reachLearning();
+  it("a failing answer changes nothing: the detour is suggested, not taken", async () => {
+    // Leaving a Concept is the learner's act everywhere else in Meno, and a
+    // detour is the one place the agent could take that from them — swapping
+    // the page out from under an answer they had just pressed, on its own
+    // reading of one wrong answer. So grading says what looks missing and
+    // names the control; the control is the learner's to press.
+    const start = await reachLearning();
+    const before = start.session.path.map((e) => e.conceptId);
+
     const state = await answerWith({
       verdict: "fail",
-      feedback: "You're missing what a vector even is.",
+      feedback:
+        "This is really about vectors — press Break it down and we will do those first.",
       adjustment: "insert_remedial",
       remedial: { label: "Vectors", summary: "Ordered lists of numbers." },
     });
 
-    // Still on dot-product; the remedial lands at order 1, everything
-    // after shifts down.
-    expect(state.session.phase).toBe("learning");
+    expect(state.concepts.some((c) => c.label === "Vectors")).toBe(false);
+    expect(state.session.path.map((e) => e.conceptId)).toEqual(before);
+    expect(state.session.activeConceptId).toBe(
+      byLabel(state, "Dot product").id,
+    );
     expect(byLabel(state, "Dot product").status).toBe("active");
 
-    const remedial = byLabel(state, "Vectors");
-    expect(remedial.origin).toBe("remedial");
-    expect(remedial.status).toBe("locked");
-    expect(remedial.order).toBe(1);
-    expect(byLabel(state, "Softmax").order).toBe(2);
-    expect(byLabel(state, "Attention").order).toBe(3);
-
-    // The previously-next Concept now requires the remedial.
-    expect(byLabel(state, "Softmax").requires).toContain(remedial.id);
+    // The suggestion itself lands, where the learner is reading.
+    const lesson = state.lessons.find(
+      (l) => l.conceptId === state.session.activeConceptId,
+    )!;
+    expect(lesson.messages.at(-1)!.kind).toBe("check-feedback");
+    expect(lesson.messages.at(-1)!.text).toContain("Break it down");
   });
 
-  it("a pass with insert_remedial puts the remedial next in line", async () => {
+  it("a passing answer stays put — nothing is blocking the learner", async () => {
     await reachLearning();
-    const state = await passAndMoveOn(
-      { exposition: "Remedial exposition", question: "Vectors check?" },
-      {
-        grade: {
-          feedback: "Right, though shakily.",
-          adjustment: "insert_remedial",
-          remedial: { label: "Vectors", summary: "Ordered lists of numbers." },
-        },
-      },
+    // A gap the answer revealed, on an answer that passed: the learner is
+    // through this Concept and stays on it, as a pass always leaves them.
+    // Nothing is generated here, so nothing beyond the grade is scripted.
+    const graded = await answerWith({
+      verdict: "pass",
+      feedback: "Right, though shakily.",
+      adjustment: "insert_remedial",
+      remedial: { label: "Vectors", summary: "Ordered lists of numbers." },
+    });
+    expect(graded.session.activeConceptId).toBe(
+      byLabel(graded, "Dot product").id,
     );
+    expect(byLabel(graded, "Vectors").status).toBe("locked");
+    // Behind the Concept it came out of, not in front of it: seating it
+    // ahead of the Concept the learner is standing on would shuffle the
+    // Path — and their folio — backwards underneath them.
+    expect(byLabel(graded, "Dot product").order).toBe(0);
+    expect(byLabel(graded, "Vectors").order).toBe(1);
+    expect(byLabel(graded, "Softmax").order).toBe(2);
+
+    // And it is what they get when they choose to move on.
+    scriptModelResponse(
+      "Remedial exposition",
+      JSON.stringify({ question: "Vectors check?" }),
+    );
+    const state: StateBody = await (
+      await postAdvance(authed("/api/session/advance"))
+    ).json();
 
     expect(byLabel(state, "Dot product").status).toBe("unlocked");
     const remedial = byLabel(state, "Vectors");
@@ -84,6 +114,37 @@ describe("Adjustment: insert_remedial", () => {
     expect(
       state.lessons.find((l) => l.conceptId === remedial.id)!.messages[0].text,
     ).toBe("Remedial exposition");
+  });
+
+  it("leaves an interrupted Concept one question, primed for the way back", async () => {
+    // A failed attempt re-primes this Concept's question; a detour then
+    // takes the learner off it. A Concept has exactly one mastery question
+    // and keeps it (CONTEXT.md, Check) — two waiting to be asked, or two
+    // different ones, would both be corruption no screen would ever show.
+    const start = await reachLearning();
+    const stuck = byLabel(start, "Dot product");
+    await answerWith({ verdict: "fail", feedback: "Not yet — try vectors." });
+
+    scriptModelResponse(
+      JSON.stringify({
+        action: "insert_remedial",
+        message: "Vectors first.",
+        remedial: { label: "Vectors", summary: "Ordered lists." },
+      }),
+      "E-vectors",
+      JSON.stringify({ question: "Q-vectors?" }),
+    );
+    await postBreakdown(authed("/api/session/breakdown"));
+    const state = await passAndMoveOn({ resume: true });
+
+    expect(state.session.activeConceptId).toBe(stuck.id);
+    const mastery = state.checks.filter(
+      (c) => c.phase === "mastery" && c.conceptIds.includes(stuck.id),
+    );
+    expect(new Set(mastery.map((c) => c.question))).toEqual(
+      new Set([FIRST_CHECK_QUESTION]),
+    );
+    expect(mastery.filter((c) => c.verdict === null)).toHaveLength(1);
   });
 
   it("ignores insert_remedial when the model omits the remedial payload", async () => {
@@ -149,21 +210,57 @@ describe("Adjustment: skip_next", () => {
     expect(state!.session.phase).toBe("learning");
   });
 
-  it("Path order stays consistent through a remedial detour to Completion", async () => {
-    await reachLearning();
-    // Fail dot-product with a remedial inserted…
-    await answerWith({
-      verdict: "fail",
-      feedback: "Gap found.",
-      adjustment: "insert_remedial",
-      remedial: { label: "Vectors", summary: "Ordered lists." },
+  it("never skips the Concept a detour pulled the learner off", async () => {
+    // The Path is a prerequisite claim, and mid-detour the "next" Concept is
+    // the one the learner just failed — with their failure on its own page.
+    // A skip there would Unlock it Graph-wide and for good, on the strength
+    // of an answer about something else entirely.
+    const start = await reachLearning();
+    const stuck = byLabel(start, "Dot product");
+    scriptModelResponse(
+      JSON.stringify({
+        action: "insert_remedial",
+        message: "Vectors first.",
+        remedial: { label: "Vectors", summary: "Ordered lists." },
+      }),
+      "E-vectors",
+      JSON.stringify({ question: "Q-vectors?" }),
+    );
+    await postBreakdown(authed("/api/session/breakdown"));
+
+    const state = await answerWith({
+      verdict: "pass",
+      feedback: "And you clearly have dot products too.",
+      adjustment: "skip_next",
     });
 
+    const after = byLabel(state, "Dot product");
+    expect(after.id).toBe(stuck.id);
+    expect(after.unlocked).toBe(false);
+    expect(after.skipped).toBe(false);
+    expect(after.status).toBe("locked");
+  });
+
+  it("Path order stays consistent through a remedial detour to Completion", async () => {
+    await reachLearning();
+    // Ask for a detour off dot-product, which is taught at once…
+    scriptModelResponse(
+      JSON.stringify({
+        action: "insert_remedial",
+        message: "Vectors first.",
+        remedial: { label: "Vectors", summary: "Ordered lists." },
+      }),
+      "E-vectors",
+      JSON.stringify({ question: "Q-vectors?" }),
+    );
+    await postBreakdown(authed("/api/session/breakdown"));
+
     // …then pass everything in the adjusted order:
-    // dot-product → Vectors → Softmax → Attention.
+    // Vectors → dot-product (returned to, so nothing is generated) →
+    // Softmax → Attention.
     let state: StateBody | null = null;
     for (const next of [
-      { exposition: "E-vectors", question: "Q-vectors?" },
+      { resume: true } as const,
       { exposition: "E-softmax", question: "Q-softmax?" },
       { exposition: "E-attention", question: "Q-attention?" },
     ]) {

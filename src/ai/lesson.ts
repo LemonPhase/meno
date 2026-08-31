@@ -173,10 +173,10 @@ export const GradeSchema = z.object({
     .enum(["none", "insert_remedial", "skip_next"])
     .default("none")
     .describe(
-      "insert_remedial: the answer reveals a real gap that needs its own " +
-        "small lesson spliced in next. skip_next: this answer passes AND " +
-        "demonstrates the NEXT concept just as completely — never on a " +
-        "fail. Otherwise none.",
+      "Both ride a passing answer only, never a fail. insert_remedial: " +
+        "this answer passes AND still reveals a real gap that needs its " +
+        "own small lesson next. skip_next: this answer passes AND " +
+        "demonstrates the NEXT concept just as completely. Otherwise none.",
     ),
   remedial: z
     .object({
@@ -254,15 +254,25 @@ Reserve "fail" for an answer that misses or mistakes the idea itself; say
 what is missing without giving the answer away, since they can attempt the
 same question again.
 
+If a failing answer reads as a missing *prerequisite* rather than a slip —
+they are not confused about this concept, they are missing something it
+rests on — name that thing in your feedback and tell them "Break it down"
+will teach it first, as a short detour, before they come back to this. Say
+it plainly, in one sentence, as a suggestion. Do not take the detour for
+them: the control is theirs, at the bottom of the page, and pressing it is
+their decision to make.
+
 Give brief feedback either way. Passing does not move them on — they stay
 on this concept for as long as they want and leave when they choose — so
 never tell them what comes next or that they are moving to it.
 
 ${VOICE}
 
-You may also adjust the path (adjustment field):
-- "insert_remedial" with a remedial {label, summary} when the answer reveals
-  a specific underlying gap worth its own small lesson before continuing.
+You may also adjust the path (adjustment field), but only on an answer you
+are passing — a fail changes nothing about the path, it only earns the
+suggestion above:
+- "insert_remedial" with a remedial {label, summary} when a passing answer
+  still reveals a specific gap worth its own small lesson next.
 - "skip_next" ONLY when you are passing this answer and it demonstrates the
   next concept on the path just as completely. Every concept here is a
   prerequisite of the one after it, so an answer that fails this concept

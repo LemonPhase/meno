@@ -528,7 +528,7 @@ describe("POST /api/session/check/answer", () => {
   });
 
   it("grades one answer per Check, whatever arrives alongside it", async () => {
-    await reachLearning();
+    const graded = active(await reachLearning())!;
     await postCheck(authed("/api/session/check"));
 
     // Two answers in flight — a double submit, or a second tab. Both grade;
@@ -536,8 +536,8 @@ describe("POST /api/session/check/answer", () => {
     // stale Session would overwrite the winner's Path while leaving the
     // remedial Concept it created in the Graph, on no Path at all.
     const grade = JSON.stringify({
-      verdict: "fail",
-      feedback: "No.",
+      verdict: "pass",
+      feedback: "Yes, though vectors themselves are worth their own page.",
       adjustment: "insert_remedial",
       remedial: { label: "Vectors", summary: "Ordered lists of numbers." },
     });
@@ -552,7 +552,7 @@ describe("POST /api/session/check/answer", () => {
     const inGraph = await graphRef(USER).collection("concepts").get();
     expect(inGraph.size).toBe(after.concepts.length);
     expect(after.concepts.filter((c) => c.label === "Vectors")).toHaveLength(1);
-    const messages = lessonOf(after, after.session.activeConceptId!)!.messages;
+    const messages = lessonOf(after, graded.id)!.messages;
     expect(messages.filter((m) => m.kind === "check-answer")).toHaveLength(1);
   });
 

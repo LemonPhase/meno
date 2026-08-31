@@ -78,7 +78,7 @@
   <!-- III -->
   <line x1="124" y1="632" x2="1156" y2="632" stroke="#ebeae3"/>
   <text class="n"  x="124" y="658">III</text>
-  <text class="h2" x="166" y="658">Agent — nine Genkit flows on Gemini 3.5</text>
+  <text class="h2" x="166" y="658">Agent — nine Genkit flows on Gemini 3.7</text>
   <text class="p"  x="166" y="680" font-style="italic" style="fill:#1b2029">investigate</text>
   <text class="p"  x="240" y="680">— grounded research, then structured extraction, then Attach.</text>
   <text class="p"  x="606" y="680" font-style="italic" style="fill:#1b2029">diagnose</text>
@@ -96,7 +96,7 @@
   <!-- vertex -->
   <rect x="100" y="770" width="528" height="96" fill="#e9edf4" stroke="#deddd5"/>
   <text class="sc" x="124" y="796" fill="#39568f">VERTEX AI</text>
-  <text class="h2" x="124" y="822">Gemini 3.5 Flash · global endpoint</text>
+  <text class="h2" x="124" y="822">Gemini 3.7 Flash · global endpoint</text>
   <text class="p"  x="124" y="842">Google Search grounding on the investigation; Zod-typed output</text>
   <text class="p"  x="124" y="858">on every extraction and grading call.</text>
 

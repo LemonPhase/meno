@@ -1,3 +1,4 @@
+import { modelName } from "@/ai/model";
 import AccountSetting from "@/components/auth/AccountSetting";
 import ThemeSetting from "@/components/shell/ThemeSetting";
 
@@ -6,8 +7,7 @@ import ThemeSetting from "@/components/shell/ThemeSetting";
 // something else worth setting.
 
 export default function SettingsPage() {
-  const model = process.env.MENO_MODEL ?? "vertexai/gemini-3.5-flash";
-  const scripted = model === "scripted";
+  const scripted = modelName === "scripted";
 
   return (
     <div className="page fade-in">
@@ -37,7 +37,7 @@ export default function SettingsPage() {
           <span className="k">Engine</span>
           <div>
             <span style={{ fontSize: 16 }}>
-              {scripted ? "Scripted (dev fake — no model calls)" : model}
+              {scripted ? "Scripted (dev fake — no model calls)" : modelName}
             </span>
             <p className="d">
               Set with the MENO_MODEL environment variable at start-up;

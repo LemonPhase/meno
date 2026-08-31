@@ -35,7 +35,7 @@ Concept is, and the two bounded Adjustments the agent is allowed to make
 (insert a remedial Concept, or skip the next one). Keeping this out of the
 prompts is what makes the behaviour testable without a model.
 
-**Agent layer** (`src/ai/*.ts`) — Genkit flows over Gemini 3.5 Flash on Vertex
+**Agent layer** (`src/ai/*.ts`) — Genkit flows over Gemini 3.7 Flash on Vertex
 AI. Three files, matching the three things the agent does:
 
 | Flow file | Flows | Notes |

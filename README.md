@@ -4,21 +4,23 @@ A learning assistant that turns any topic into a personal, adaptive curriculum.
 
 Give it a topic (or a concept you're stuck on), and the agent investigates it, figures out what you need to know first, asks you questions to find out where you actually are, then walks you through it one atomic concept at a time — quizzing you as it goes and adapting the path when you struggle or when you already know more than it assumed. Everything you unlock becomes a node in a personal knowledge graph you can inspect, correct, and grow over time.
 
-Named after Plato's *Meno* — the dialogue built around the paradox of how you search for knowledge you don't yet have.
+Named after Plato's _Meno_ — the dialogue built around the paradox of how you search for knowledge you don't yet have.
 
 ### **[→ Try it live](https://meno-965710783496.europe-west2.run.app)**
 
 Running on Cloud Run in `europe-west2`. Sign in with Google; your graph is your own.
 · **[Architecture](docs/architecture.md)** · **[Decision records](docs/adr/)**
 
+Any Google account works, and you start with an empty graph. Give it a topic, answer its questions once the investigation is done, and start learning.
+
 ![A Meno session: the concept Query, Key, Value being taught, with the path rail alongside it](docs/session.png)
 
-*A session part-way along its path. The rail on the right is this session's ordering
+_A session part-way along its path. The rail on the right is this session's ordering
 of what is left to teach — and **Softmax and Scaling** is marked `skipped · you knew
 it`, because the diagnostic found it was already there. Three levers sit under the
 composer, laid out as the moves they are: **Previous concept** to re-read something
 already passed, **Break it down** when a concept is too hard, and — rightmost, always
-the way forward — **Test me** when it is too easy.*
+the way forward — **Test me** when it is too easy._
 
 ## How it works
 
@@ -29,7 +31,7 @@ the way forward — **Test me** when it is too easy.*
 5. **Learn, one node at a time** — each node is taught and quizzed only when you reach it (lazy generation). Three levers sit under the composer, in the order they mean — back, down, on: **Previous concept** re-reads a lesson you have already passed (nothing moves; you come straight back), **Break it down** is for when it's too hard (the agent finds the prerequisite you're missing and teaches that first, as a short detour), and **Test me** is for when it's too easy (it skips the teaching, never the verification). Each node has one check; pass it and the rightmost lever becomes **Next concept**, and stays, so you leave when you're satisfied rather than the moment you're graded. Your answers can also trigger the agent to insert a remedial node, or — when a passing answer demonstrates the next node too — to skip that one; the graph reshapes live as this happens.
 6. **Review the graph** — unlocked concepts form a node-link graph; each node links back to the session where you learned it. You can rename or delete nodes yourself; edits are recorded in an audit log that feeds back into future graph updates.
 
-You sign in with Google; everything past that point belongs to your account. Sessions behave like conversations: several can be in progress at once, each resumable where you left off, and they all feed the one graph. A topic that rests on something you've already learned *attaches* to the concept you already have rather than duplicating it — and if you've already unlocked it, it's skipped rather than taught twice.
+You sign in with Google; everything past that point belongs to your account. Sessions behave like conversations: several can be in progress at once, each resumable where you left off, and they all feed the one graph. A topic that rests on something you've already learned _attaches_ to the concept you already have rather than duplicating it — and if you've already unlocked it, it's skipped rather than taught twice.
 
 ## Architecture
 
@@ -74,7 +76,7 @@ gcloud services enable aiplatform.googleapis.com firestore.googleapis.com \
 ```
 
 **Sign-in needs a service account key locally.** Application Default
-Credentials from `gcloud auth application-default login` are your *user*
+Credentials from `gcloud auth application-default login` are your _user_
 account, and they are enough for Firestore and Vertex but not for signing in:
 minting a session cookie is an authenticated call to the Identity Toolkit,
 and Google rejects user credentials there. The two halves of sign-in have
@@ -93,7 +95,7 @@ chmod 600 ~/.config/firebase/admin.json
 #   GOOGLE_APPLICATION_CREDENTIALS=/home/<you>/.config/firebase/admin.json
 ```
 
-That key *is* the service account — treat it as a secret, never commit it, and
+That key _is_ the service account — treat it as a secret, never commit it, and
 revoke it from IAM → Service accounts → Keys if it leaks. None of this applies
 on Cloud Run, where the attached `meno-runtime` account is handed tokens by
 the metadata server and no key file exists.
@@ -244,4 +246,4 @@ but restrict it to the Identity Toolkit API under Google Cloud console → APIs
 
 ## Status
 
-Early build — in progress. Current scope is Google sign-in with one graph per account, text-only topic input (file upload planned), and a bounded adaptive path (insert-remedial / skip-next). Concepts found by different sessions are already reconciled as they are created — that is what *attaching* is — but the manual half is missing: merging two concepts you decide are the same, and drawing a prerequisite edge the agent didn't find. That, and a dedicated LLM-analysis layer over the edit audit log, are explicit future work.
+Early build — in progress. Current scope is Google sign-in with one graph per account, text-only topic input (file upload planned), and a bounded adaptive path (insert-remedial / skip-next). Concepts found by different sessions are already reconciled as they are created — that is what _attaching_ is — but the manual half is missing: merging two concepts you decide are the same, and drawing a prerequisite edge the agent didn't find. That, and a dedicated LLM-analysis layer over the edit audit log, are explicit future work.

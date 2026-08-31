@@ -5,7 +5,7 @@
 // then settles into the right rail once Learning begins.
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import LessonFlow from "@/components/session/LessonFlow";
 import Markdown from "@/components/session/Markdown";
 import PathRail from "@/components/session/PathRail";
@@ -41,6 +41,24 @@ function pathOf(concepts: SessionConcept[]): SessionConcept[] {
     .sort((a, b) => (a.order ?? -1) - (b.order ?? -1));
 }
 
+/**
+ * The Concepts this Session has already taught, in Path order — what
+ * "Previous concept" can go back to. A skipped Concept was never taught, so
+ * it has no Lesson and is not a place to stand.
+ */
+function taughtBefore(
+  path: SessionConcept[],
+  folio: number,
+  lessons: Lesson[],
+): SessionConcept[] {
+  return path
+    .slice(0, Math.max(folio - 1, 0))
+    .filter(
+      (c) =>
+        (lessons.find((l) => l.conceptId === c.id)?.messages.length ?? 0) > 0,
+    );
+}
+
 export default function SessionWorkspace({
   sessionId,
 }: {
@@ -53,6 +71,15 @@ export default function SessionWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [railOpen, setRailOpen] = useState(false);
   const [resumeNote, setResumeNote] = useState(false);
+
+  // Which earlier Lesson is being re-read, and the Concept that was Active
+  // when the learner stepped back to it. Kept here rather than inside the
+  // Lesson: re-reading changes the composer's height, and the rail's
+  // floating toggle — a sibling of the whole workspace — has to clear it.
+  const [review, setReview] = useState<{
+    from: string;
+    conceptId: string;
+  } | null>(null);
 
   // Everything present at first load renders settled; only what arrives
   // during this visit animates in. The watermark is the newest server
@@ -215,6 +242,14 @@ export default function SessionWorkspace({
   const path = pathOf(state.concepts);
   const active = state.concepts.find((c) => c.id === session.activeConceptId);
   const folio = active ? path.findIndex((c) => c.id === active.id) + 1 : 0;
+  const behind = taughtBefore(path, folio, state.lessons);
+  // A review is only the one the learner opened from where the Session
+  // actually stands: moving on drops it rather than leaving them reading a
+  // page of a Session that has gone somewhere else.
+  const reviewing =
+    review && active && review.from === active.id
+      ? (behind.find((c) => c.id === review.conceptId) ?? null)
+      : null;
 
   return (
     <>
@@ -234,6 +269,11 @@ export default function SessionWorkspace({
               active={active}
               path={path}
               folio={folio}
+              behind={behind}
+              reviewing={reviewing}
+              onReview={(conceptId) =>
+                setReview(conceptId ? { from: active.id, conceptId } : null)
+              }
               busy={busy}
               call={call}
               animateAfter={watermark}
@@ -259,7 +299,7 @@ export default function SessionWorkspace({
 
       {withRail && !railOpen && (
         <button
-          className={`rail-fab sc${session.phase === "learning" ? " above-composer" : ""}`}
+          className={`rail-fab sc${session.phase === "learning" ? " above-composer" : ""}${reviewing ? " above-reading" : ""}`}
           onClick={() => setRailOpen(true)}
         >
           Path · {roman(Math.max(folio, 1))} of {roman(Math.max(path.length, 1))}
@@ -457,6 +497,9 @@ function Learning({
   active,
   path,
   folio,
+  behind,
+  reviewing,
+  onReview,
   busy,
   call,
   animateAfter,
@@ -467,6 +510,12 @@ function Learning({
   active: SessionConcept;
   path: SessionConcept[];
   folio: number;
+  /** The Concepts already taught here, in Path order — see taughtBefore. */
+  behind: SessionConcept[];
+  /** The earlier Concept being re-read, or null for the live Lesson. */
+  reviewing: SessionConcept | null;
+  /** Open an earlier Concept's Lesson, or null to come back. */
+  onReview: (conceptId: string | null) => void;
   busy: string | null;
   call: (label: string, url: string, body?: unknown) => Promise<void>;
   animateAfter: number;
@@ -474,7 +523,8 @@ function Learning({
   onDismissResume: () => void;
 }) {
   const [input, setInput] = useState("");
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const lesson = state.lessons.find((l) => l.conceptId === active.id);
   // Only a *revealed* Check — one already shown as a check-question message
   // — puts the composer in answer mode. A Check may also sit primed and
@@ -490,42 +540,48 @@ function Learning({
     ? "Next concept"
     : "Finish the path";
 
+  // Going back is a move of the eye, not of the Session: an earlier Lesson
+  // is re-read exactly as it was written; nothing re-activates or re-locks,
+  // and the Graph is left standing. So there is no request to make — the
+  // state is the workspace's, which also drops it the moment the Session
+  // moves on. A detour splices in behind the Active Concept and rightly
+  // leaves a review standing: the Session has not moved.
   const lessonFor = (id: string) =>
     state.lessons.find((l) => l.conceptId === id);
-  // What the learner can go back to: the Concepts this Session has already
-  // taught. A skipped one was never taught, so it has no Lesson to re-read
-  // and is not a place to stand.
-  const behind = path
-    .slice(0, Math.max(folio - 1, 0))
-    .filter((c) => (lessonFor(c.id)?.messages.length ?? 0) > 0);
+  const reviewIdx = reviewing
+    ? behind.findIndex((c) => c.id === reviewing.id)
+    : -1;
 
-  // Going back is a move of the eye, not of the Session: an earlier Lesson
-  // is re-read exactly as it was written, and nothing re-activates, re-locks
-  // or leaves the Graph where it stands. So it is client state, and there is
-  // no request to make. It records which Concept was Active when the learner
-  // stepped back, so anything that moves the Session — the way on, or a
-  // detour splicing in — drops the review rather than leaving them reading
-  // an old page of a Session that has gone somewhere else.
-  const [review, setReview] = useState<{ from: string; at: string } | null>(
-    null,
-  );
-  const reviewIdx =
-    review?.from === active.id
-      ? behind.findIndex((c) => c.id === review.at)
-      : -1;
-  const reviewing = reviewIdx >= 0 ? behind[reviewIdx] : null;
-  const goBackTo = (conceptId: string) =>
-    setReview({ from: active.id, at: conceptId });
-
-  // Either direction arrives at the top of the concept, as arriving does.
+  // Stepping either way arrives at the top of the concept, as arriving does,
+  // and puts focus on its heading — the view swapped underneath whatever
+  // button was pressed. Only on a real step, though: the workspace already
+  // lands the page on arrival, and nothing should take focus from a reader
+  // who has just opened it. Comparing against the last id seen, rather than
+  // counting runs, is what keeps that true under StrictMode's double mount.
+  const seen = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    window.scrollTo({ top: 0 });
+    const id = reviewing?.id ?? null;
+    if (seen.current !== undefined && seen.current !== id) {
+      window.scrollTo({ top: 0 });
+      headingRef.current?.focus();
+    }
+    seen.current = id;
   }, [reviewing?.id]);
 
   const byId = new Map(state.concepts.map((c) => [c.id, c]));
   const reqs = active.requires
     .map((r) => byId.get(r)?.label)
     .filter(Boolean) as string[];
+
+  // The field auto-grows imperatively, so its height lives in the DOM and
+  // not in React — and re-reading unmounts it. Sizing it on mount is what
+  // brings a part-written question back the height it had.
+  const sizeField = useCallback((el: HTMLTextAreaElement | null) => {
+    inputRef.current = el;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+  }, []);
 
   async function send() {
     const text = input.trim();
@@ -547,15 +603,18 @@ function Learning({
 
   if (reviewing) {
     const earlier = lessonFor(reviewing.id)!;
-    const at = path.findIndex((c) => c.id === reviewing.id) + 1;
+    const reviewFolio = path.findIndex((c) => c.id === reviewing.id) + 1;
     return (
       <>
         <div className="flow">
           <div className="concept-head">
             <span className="kicker sc">
-              Concept {roman(at)} · unlocked · re-reading
+              Concept {roman(reviewFolio)} · unlocked
+              {reviewing.origin === "remedial" && " · detour"} · re-reading
             </span>
-            <h2 className="h-concept">{reviewing.label}</h2>
+            <h2 className="h-concept" ref={headingRef} tabIndex={-1}>
+              {reviewing.label}
+            </h2>
             <p className="concept-summary">{reviewing.summary}</p>
           </div>
           <div className="notice fade-in">
@@ -575,17 +634,20 @@ function Learning({
 
         {/* The same three slots as the lesson's, so the way forward stays
             the rightmost button: from here, forward is back to work. */}
-        <div className="composer">
+        <div className="composer reading">
           <div className="levers">
             <button
               className="lever back sc sc-11"
-              disabled={reviewIdx === 0}
+              disabled={reviewIdx <= 0}
+              // A title on a disabled button never shows, so it says nothing
+              // there: what it would explain — that this is the first thing
+              // the session taught — is what being greyed out already means.
               title={
                 reviewIdx > 0
                   ? `Re-read ${behind[reviewIdx - 1].label}.`
-                  : "This is the first concept this session taught you."
+                  : undefined
               }
-              onClick={() => goBackTo(behind[reviewIdx - 1].id)}
+              onClick={() => onReview(behind[reviewIdx - 1].id)}
             >
               ← Earlier concept
             </button>
@@ -593,7 +655,7 @@ function Learning({
             <button
               className="lever back strong sc sc-11"
               title={`Back to ${active.label}, where the session left off.`}
-              onClick={() => setReview(null)}
+              onClick={() => onReview(null)}
             >
               Back to the lesson →
             </button>
@@ -612,7 +674,9 @@ function Learning({
             {reqs.length > 0 && ` · requires ${reqs.join(" & ")}`}
             {active.origin === "remedial" && " · detour"}
           </span>
-          <h2 className="h-concept">{active.label}</h2>
+          <h2 className="h-concept" ref={headingRef} tabIndex={-1}>
+            {active.label}
+          </h2>
           <p className="concept-summary">{active.summary}</p>
         </div>
         {resumeNote && (
@@ -638,7 +702,7 @@ function Learning({
       <div className={`composer${pendingCheck ? " check" : ""}`}>
         <div className="field">
           <textarea
-            ref={inputRef}
+            ref={sizeField}
             rows={1}
             value={input}
             placeholder={
@@ -680,9 +744,9 @@ function Learning({
             title={
               behind.length > 0
                 ? `Re-read ${behind[behind.length - 1].label}. Nothing moves — you come straight back here.`
-                : "Nothing has been taught before this one yet."
+                : undefined
             }
-            onClick={() => goBackTo(behind[behind.length - 1].id)}
+            onClick={() => onReview(behind[behind.length - 1].id)}
           >
             ← Previous concept
           </button>
@@ -690,9 +754,13 @@ function Learning({
           {/* Both levers are spent once the Check is passed: there is nothing
               left to be tested on, and a Concept the learner has just
               demonstrated is not one to insert a prerequisite before. */}
+          {/* Offered right up to the pass, a Check on screen included: being
+              asked the question is often exactly when the learner finds out
+              they are missing something underneath. The route allows it
+              (breakdown/route.ts refuses only a passed Concept). */}
           <button
             className="lever sc sc-11"
-            disabled={!!busy || !!passed || !!pendingCheck}
+            disabled={!!busy || !!passed}
             title="Too hard? The tutor finds the prerequisite you are missing and teaches that first, as a short detour before this concept. The concept itself stays as it is."
             onClick={() => call("breakdown", "/api/session/breakdown")}
           >

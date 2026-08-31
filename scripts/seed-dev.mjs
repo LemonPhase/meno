@@ -307,6 +307,35 @@ put("sessions", S3, {
   createdAt: at(30),
 });
 
+// Taught and passed before the Active one, so this Session exercises the
+// whole lever row at once: Previous concept live, both action levers spent,
+// and the move on offered.
+put("lessons", `${S3}__${S3}_conditional`, {
+  sessionId: S3,
+  conceptId: `${S3}_conditional`,
+  messages: [
+    {
+      kind: "exposition",
+      text: "Conditioning is narrowing the world to what you already know:\n\n$$\nP(A \\mid B) = \\frac{P(A \\cap B)}{P(B)}\n$$\n\nThe denominator is the whole of it — you are no longer asking how often $A$ happens, but how often it happens **among the times $B$ did**.",
+      createdAt: at(),
+    },
+    { kind: "check-question", text: "Why does conditioning divide by $P(B)$?", checkId: "seed-check-5", createdAt: at(2) },
+    { kind: "check-answer", text: "To renormalise — B is the new sample space, so it has to sum to one.", checkId: "seed-check-5", createdAt: at(1) },
+    { kind: "check-feedback", text: "Exactly. Everything outside $B$ is discarded, and what is left has to be a distribution again.", checkId: "seed-check-5", createdAt: at(1) },
+  ],
+});
+
+put("checks", "seed-check-5", {
+  id: "seed-check-5",
+  sessionId: S3,
+  phase: "mastery",
+  conceptIds: [`${S3}_conditional`],
+  question: "Why does conditioning divide by $P(B)$?",
+  answer: "To renormalise — B is the new sample space, so it has to sum to one.",
+  verdict: "pass",
+  createdAt: at(),
+});
+
 put("lessons", `${S3}__${S3}_bayes`, {
   sessionId: S3,
   conceptId: `${S3}_bayes`,

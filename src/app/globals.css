@@ -278,8 +278,10 @@ a { color: inherit; text-decoration: none; }
   padding: 8px 13px; color: var(--ink2);
 }
 .rail-fab:hover { color: var(--ink); border-color: var(--ink); }
-/* Clear of the composer — the field, the lever row and the guidance line. */
+/* Clear of the composer — the field, the lever row and the guidance line;
+   while re-reading there is no field and no guidance line to clear. */
 .rail-fab.above-composer { bottom: 165px; }
+.rail-fab.above-composer.above-reading { bottom: 88px; }
 
 /* =================== prose =================== */
 .h-display {
@@ -383,7 +385,7 @@ a { color: inherit; text-decoration: none; }
    what is missing underneath, rightmost is always the way on. A spent lever
    greys out in its slot instead of leaving the row, so the way forward never
    moves. */
-.levers { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 13px; }
+.levers { display: flex; flex-wrap: nowrap; align-items: center; gap: 10px; margin-top: 13px; }
 .levers .sp { flex: 1; min-width: 0; }
 .lever {
   border: 1px solid var(--rule); background: var(--sheet);
@@ -838,7 +840,7 @@ a { color: inherit; text-decoration: none; }
   /* Too narrow for the levers to sit apart, so they divide the row instead:
      the geometry that carries their meaning — back, down, on — survives, and
      nothing wraps to a second line where the way forward could move. */
-  .levers { gap: 7px; align-items: stretch; flex-wrap: nowrap; }
+  .levers { gap: 7px; align-items: stretch; }
   .levers .sp { display: none; }
   .lever {
     flex: 1 1 0; min-width: 0; padding: 8px 4px; text-align: center;
@@ -846,6 +848,7 @@ a { color: inherit; text-decoration: none; }
   }
   /* The lever labels take two lines here, so the composer is taller. */
   .rail-fab.above-composer { bottom: 198px; }
+  .rail-fab.above-composer.above-reading { bottom: 108px; }
 
   .movements { grid-template-columns: minmax(0, 1fr); }
   .movements li,

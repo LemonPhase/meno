@@ -19,6 +19,15 @@ export const ai = genkit({
       ],
 });
 
+// Thinking level is set on the model reference, not at the nine call sites:
+// Genkit merges a reference's config into each generate() call per key, so
+// investigate's googleSearchRetrieval survives alongside it.
+//
+// MEDIUM is 3.7 Flash's own default, pinned here so the reasoning depth is a
+// decision rather than whatever the next model ships with. Don't lower it to
+// MINIMAL — 3.7 Flash rejects that value outright.
 export const model: ModelArgument = scripted
   ? registerScriptedModel(ai)
-  : modelName;
+  : vertexAI.model(modelName, {
+      thinkingConfig: { thinkingLevel: "MEDIUM" },
+    });

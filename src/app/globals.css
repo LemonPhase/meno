@@ -278,7 +278,11 @@ a { color: inherit; text-decoration: none; }
   padding: 8px 13px; color: var(--ink2);
 }
 .rail-fab:hover { color: var(--ink); border-color: var(--ink); }
-.rail-fab.above-composer { bottom: 86px; }
+/* Clear of the composer, whose height is not a constant: the guidance line
+   wraps differently per state and the lever labels take two lines when
+   narrow, and while re-reading there is no field at all. It is measured and
+   published as --composer-h; the fallback is a full-width lesson composer. */
+.rail-fab.above-composer { bottom: calc(var(--composer-h, 157px) + 10px); }
 
 /* =================== prose =================== */
 .h-display {
@@ -339,7 +343,13 @@ a { color: inherit; text-decoration: none; }
 @keyframes wfade { to { opacity: 1; } }
 
 /* =================== composer =================== */
-.composer { position: sticky; bottom: 0; padding: 18px 0 26px; background: linear-gradient(to top, var(--paper) 68%, transparent); }
+/* Solid paper behind the whole control, and a soft edge only in the padding
+   above the field: the Lesson scrolls *under* this, and a fade that reached
+   as far as the field let the prose show through the placeholder. */
+.composer {
+  position: sticky; bottom: 0; padding: 18px 0 26px;
+  background: linear-gradient(to top, var(--paper) calc(100% - 18px), transparent);
+}
 .composer .field {
   display: flex; align-items: flex-end; gap: 16px;
   border-bottom: 1px solid var(--ink); padding-bottom: 7px;
@@ -376,25 +386,35 @@ a { color: inherit; text-decoration: none; }
 .act.primary:hover:not(:disabled)::after { opacity: 1; }
 .act.rubric-act { color: var(--rubric-ink); }
 .act.rubric-act::after { background: var(--rubric); }
-/* Lesson actions, set inside the guidance line rather than the field. */
-.hint-act {
-  color: var(--rubric-ink); position: relative; padding-bottom: 1px;
-  white-space: nowrap;
+/* The lesson's three levers. They act on the Concept, not on what was typed,
+   so they sit under the field rather than in it — and they are laid out as
+   the moves they are: leftmost goes back over what is done, middle asks for
+   what is missing underneath, rightmost is always the way on. A spent lever
+   greys out in its slot instead of leaving the row, so the way forward never
+   moves. */
+.levers { display: flex; flex-wrap: nowrap; align-items: center; gap: 10px; margin-top: 13px; }
+.levers .sp { flex: 1; min-width: 0; }
+.lever {
+  border: 1px solid var(--rule); background: var(--sheet);
+  padding: 8px 13px; color: var(--ink2);
+  transition: color 0.18s ease, border-color 0.18s ease;
 }
-.hint-act::after {
-  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
-  background: var(--rubric); opacity: 0.4; transition: opacity 0.18s ease;
-}
-.hint-act:hover:not(:disabled)::after { opacity: 1; }
-.hint-act:disabled { color: var(--ink3); cursor: default; }
-.hint-act:disabled::after { opacity: 0; }
-/* Moving on is laurel, the colour of everything already attained: it is only
-   ever offered on a passed Check, and once offered it stays. It sits in the
-   guidance line rather than beside Send because it acts on the Concept, and
-   because it must not read as the thing to do next — staying is equally
-   right. */
-.hint-act.onward { color: var(--laurel-ink); }
-.hint-act.onward::after { background: var(--laurel); }
+.lever:hover:not(:disabled) { color: var(--ink); border-color: var(--ink3); }
+.lever:disabled { color: var(--ink3); border-color: var(--rule2); cursor: default; }
+/* Lapis is wayfinding: going back moves the eye, never the session. */
+.lever.back:not(:disabled) { color: var(--lapis-ink); }
+.lever.back:hover:not(:disabled) { border-color: var(--lapis); }
+/* Rubric is the reader's own work, and the Check is the whole of it. */
+.lever.on:not(:disabled) { color: var(--rubric-ink); border-color: var(--rubric); }
+.lever.on:hover:not(:disabled) { border-color: var(--rubric); background: var(--rubric-bg); }
+/* Coming back from a re-reading is the row's forward move but still only
+   wayfinding, so it takes the lapis border rather than the rubric one. */
+.lever.back.strong:not(:disabled) { border-color: var(--lapis); }
+.lever.back.strong:hover:not(:disabled) { border-color: var(--lapis); background: var(--lapis-bg); }
+/* Once the Check is passed the rightmost slot is still the way on, but the
+   move it offers is attainment rather than work — so it turns laurel. */
+.lever.on.passed:not(:disabled) { color: var(--laurel-ink); border-color: var(--laurel); }
+.lever.on.passed:hover:not(:disabled) { border-color: var(--laurel); background: var(--laurel-bg); }
 
 .thinking { display: flex; align-items: center; gap: 10px; color: var(--ink3); margin: 6px 0 14px; }
 .thinking i {
@@ -732,6 +752,10 @@ a { color: inherit; text-decoration: none; }
 }
 .toast.on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 .toast.err { border-color: var(--rubric); color: var(--rubric-ink); }
+/* Above the composer rather than over it: the toast holds until it is
+   dismissed, and the levers it would otherwise cover are exactly what the
+   reader reaches for after an error. */
+.toast.above-composer { bottom: calc(var(--composer-h, 157px) + 14px); }
 
 /* =================== responsive =================== */
 @media (max-width: 1100px) {
@@ -794,6 +818,15 @@ a { color: inherit; text-decoration: none; }
 }
 
 @media (max-width: 620px) {
+  /* Too narrow for the levers to sit apart, so they divide the row instead:
+     the geometry that carries their meaning — back, down, on — survives, and
+     nothing wraps to a second line where the way forward could move. */
+  .levers { gap: 7px; align-items: stretch; }
+  .levers .sp { display: none; }
+  .lever {
+    flex: 1 1 0; min-width: 0; padding: 8px 4px; text-align: center;
+    font-size: 9px; letter-spacing: 0.09em;
+  }
   .movements { grid-template-columns: minmax(0, 1fr); }
   .movements li,
   .movements li:nth-child(odd) {

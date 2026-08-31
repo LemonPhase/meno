@@ -1,0 +1,94 @@
+name: Preview cleanup
+
+# A preview lives as long as its pull request. Cloud Run scales to zero, so
+# an abandoned one costs nothing to run — but it stays reachable, pointed at
+# the production Firestore, on code nobody is reviewing any more. So closing
+# the PR takes it down, merged or not.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  teardown:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Delete the preview service
+        run: |
+          SERVICE="meno-pr-${{ github.event.pull_request.number }}"
+          # A PR that never deployed one (a fork, a failed build) has nothing
+          # to delete, and that is not a failure.
+          if ! gcloud run services describe "$SERVICE" \
+              --project "${{ vars.GCP_PROJECT_ID }}" \
+              --region "${{ vars.GCP_REGION }}" > /dev/null 2>&1; then
+            echo "No preview service for this PR."
+            exit 0
+          fi
+          URL=$(gcloud run services describe "$SERVICE" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --format "value(status.url)")
+          gcloud run services delete "$SERVICE" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --quiet
+          echo "HOST=${URL#https://}" >> "$GITHUB_ENV"
+          echo "Deleted $SERVICE."
+
+      - name: Stop authorizing its host for sign-in
+        if: env.HOST != ''
+        continue-on-error: true
+        run: |
+          API="https://identitytoolkit.googleapis.com/admin/v2/projects/${{ vars.GCP_PROJECT_ID }}/config"
+          TOKEN=$(gcloud auth print-access-token)
+          CURRENT=$(curl -sf -H "Authorization: Bearer $TOKEN" "$API" | jq -c '.authorizedDomains // []')
+          BODY=$(echo "$CURRENT" | jq -c --arg h "$HOST" '{authorizedDomains: (. - [$h])}')
+          curl -sf -X PATCH -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            "$API?updateMask=authorizedDomains" -d "$BODY" > /dev/null \
+            && echo "Removed $HOST." \
+            || echo "::warning::Could not remove $HOST from the authorized domains."
+
+      - name: Delete the preview's images
+        continue-on-error: true
+        run: |
+          REPO="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/meno/meno"
+          for TAG in $(gcloud artifacts docker tags list "$REPO" \
+              --project "${{ vars.GCP_PROJECT_ID }}" \
+              --format "value(tag)" 2>/dev/null \
+              | grep "^pr-${{ github.event.pull_request.number }}-" || true); do
+            gcloud artifacts docker images delete "$REPO:${TAG##*/}" \
+              --project "${{ vars.GCP_PROJECT_ID }}" --delete-tags --quiet || true
+          done
+
+      - name: Say it is gone
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+        run: |
+          MARKER="<!-- meno-preview -->"
+          ID=$(gh api --paginate \
+            "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -1)
+          # Only ever edits the comment the deploy left; it never adds one to
+          # a closed pull request.
+          if [ -n "$ID" ]; then
+            BODY=$(printf '%s\n**Preview:** taken down with this pull request.\n' "$MARKER")
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$ID" \
+              -f body="$BODY" > /dev/null
+          fi

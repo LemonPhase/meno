@@ -39,3 +39,73 @@ the same question, so a learner failing the same Concept three times could
 draw three separate `skip_next` calls, each aimed at whatever was next by
 then — unlocking three untaught Concepts, Graph-wide and durable, for a
 learner who had demonstrated nothing.
+
+## Addendum — the remedial goes in front, and is taught first (2026-08-31)
+
+`insert_remedial` used to splice the remedial Concept in *after* the Active
+one, and leave it there to be reached in turn. Both halves of that were
+wrong, and this supersedes the wording at the top of this record ("splice one
+remedial Concept in after the current one").
+
+A remedial exists because a prerequisite is missing. A prerequisite taught
+after the thing it holds up is not a prerequisite — it is a footnote the
+learner reads once they no longer need it. Worse, reaching it meant passing
+the Concept it was inserted to unblock: the learner had to get through the
+thing they were stuck on before being taught what they were stuck on. So the
+remedial now takes the seat in front of the Concept it unblocks, and that
+Concept gains a `requires` edge on it — the Path and the graph both say what
+rests on what.
+
+Being in front is not enough on its own, so a remedial asked for with "Break
+it down" is also *taken* at once. The Concept the learner is pulled off is
+interrupted rather than left — it is not Unlocked, it keeps its Lesson and
+its unanswered Check, and it is the next thing on the Path when the detour is
+passed. Returning to it generates nothing: a Concept is taught once, and its
+one mastery question is the one it was written with.
+
+**Grading suggests a detour; it never takes one.** A failing answer changes
+the Path in no way at all. Where the gap it reveals is a missing prerequisite
+rather than a slip, the feedback names that and points at "Break it down" —
+the control already under the composer — and stops there. Taking it is the
+learner's press.
+
+That is a deliberate narrowing of this record's original "insert_remedial
+rides either verdict", and of the 2026-08-28 addendum above. Leaving a
+Concept is the learner's act everywhere else in Meno (CONTEXT.md, Moving
+on), and a detour was the one place the agent could quietly take it from
+them: it would swap the page out from under an answer they had just pressed,
+on the strength of its own reading of one wrong answer, and their feedback
+with it. A wrong answer is also thin evidence — attempts are uncapped and
+re-ask the same question, so a learner having a hard time could be walked
+steadily further under the Concept they came for, one bounded step at a time,
+which is the unbounded replanning this record exists to prevent. The learner
+pressing the lever is neither of those things, so that press stays unbounded.
+
+A remedial on a *passing* answer still rides the grade, and sits behind the
+Concept it came out of: nothing is being unblocked there, the learner stays
+where a pass always leaves them, and the remedial is simply what comes next
+when they choose to move on.
+
+This costs two more model calls on a "Break it down" that takes a detour
+(the remedial's exposition and its Check) — the same two any Concept costs
+when it is reached, moved to the moment the learner is stuck instead of
+later.
+
+Three things follow, and are part of this decision rather than incidental
+to it:
+
+**`skip_next` can never take the interrupted Concept.** Mid-detour, the next
+Concept on the Path is the one the learner was pulled off — the one thing
+there they have demonstrably *not* got, often with a failed attempt on its
+own page. Skipping it would Unlock it Graph-wide and for good on the
+strength of an answer about something else, which is the defect the
+2026-08-30 addendum above was written to close, arriving through a door that
+addendum could not have anticipated. A Concept this Session has already
+taught is never a skip target, and is not offered to the grader as what
+comes next.
+
+**Being interrupted is a state the rest of the app has to know about.** A
+Concept can now be Locked and still hold a Lesson, which had never been
+possible: it is not deletable (the guard used to ask only whether a Concept
+was Active), it is not a skip target, and the rail says the learner is
+coming back to it rather than leaving it looking unreached.

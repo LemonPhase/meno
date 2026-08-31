@@ -13,6 +13,7 @@ import {
   saveMasteryCheck,
   skipNextConcept,
   spliceRemedialConcept,
+  taughtHere,
 } from "@/lib/store";
 
 /**
@@ -59,12 +60,18 @@ export async function POST(request: Request) {
   }
 
   const next = nextLockedConcept(session, state.concepts);
+  // What comes next is offered to the grader so a passing answer that
+  // demonstrates it can skip it — but a Concept this Session already taught
+  // is not that. Mid-detour the next thing is the Concept the learner was
+  // pulled off, and inviting a skip of it would hand them, for good, the one
+  // thing on the Path they have just failed.
+  const onward = next && !taughtHere(state.lessons, next.id) ? next : null;
   const grade = await gradeMasteryCheck({
     topic: session.topic,
     concept: { label: concept.label, summary: concept.summary },
     nextConcept:
-      next && next.id !== concept.id
-        ? { label: next.label, summary: next.summary }
+      onward && onward.id !== concept.id
+        ? { label: onward.label, summary: onward.summary }
         : null,
     lesson: { messages: lesson.messages },
     question: check.question,
@@ -93,13 +100,30 @@ export async function POST(request: Request) {
   );
 
   // ADR-0001: the bounded Adjustment rides on the grading result, and is
-  // recorded in the Lesson so the transcript explains itself later.
-  if (grade.adjustment === "insert_remedial" && grade.remedial) {
+  // recorded in the Lesson so the transcript explains itself later. Both
+  // Adjustments ride a pass and only a pass.
+  //
+  // A failing answer adjusts nothing. When the gap it reveals is a missing
+  // prerequisite, grading says so in its feedback and points at Break it
+  // down — see the prompt in @/ai/lesson. Leaving a Concept is the
+  // learner's act everywhere else in Meno (CONTEXT.md, Moving on), and a
+  // detour is the one place the agent could take it from them: it would
+  // swap the page out from under an answer they had just pressed, on the
+  // strength of its own reading of one wrong answer. So it suggests, and
+  // the control it names is the one already under the composer.
+  if (
+    grade.adjustment === "insert_remedial" &&
+    grade.remedial &&
+    grade.verdict === "pass"
+  ) {
+    // Behind the Concept it came out of: the learner is through that one and
+    // stays on it, so seating the remedial in front would shuffle the Path —
+    // and their folio — backwards underneath them. It is simply next.
     const remedial = await spliceRemedialConcept(
       session,
       concept,
-      state.concepts,
       grade.remedial,
+      "after",
       graphId,
     );
     await appendLessonMessages(
@@ -116,7 +140,12 @@ export async function POST(request: Request) {
     // so honouring it on fails also let three failures unlock three untaught
     // Concepts, Graph-wide and for good. See ADR-0001's 2026-08-30 addendum.
   } else if (grade.adjustment === "skip_next" && grade.verdict === "pass") {
-    const skipped = await skipNextConcept(session, state.concepts, graphId);
+    const skipped = await skipNextConcept(
+      session,
+      state.concepts,
+      state.lessons,
+      graphId,
+    );
     if (skipped) {
       await appendLessonMessages(
         session.id,

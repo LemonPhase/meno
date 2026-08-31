@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { computeLayout } from "@/lib/dag-layout";
-import type { Check, Session, SessionConcept } from "@/lib/types";
+import type { Check, Lesson, Session, SessionConcept } from "@/lib/types";
 import { readPref, roman, writePref } from "@/lib/ui";
 
 const MAP_PREF = "meno-rail-map";
@@ -123,6 +123,7 @@ export default function PathRail({
   session,
   concepts,
   checks,
+  lessons,
   mode,
   open,
   onClose,
@@ -131,6 +132,8 @@ export default function PathRail({
   session: Session;
   concepts: SessionConcept[];
   checks: Check[];
+  /** This Session's Lessons — what says a Locked Concept was interrupted. */
+  lessons: Lesson[];
   mode: "learning" | "complete";
   open: boolean;
   onClose: () => void;
@@ -202,6 +205,14 @@ export default function PathRail({
         {rows.map(({ concept: c, before }) => {
           const cls =
             c.status === "unlocked" ? "done" : c.status === "active" ? "now" : "";
+          // A Locked Concept with a Lesson is one a detour interrupted: the
+          // learner has a whole page there and is on their way back to it,
+          // which without a word of its own reads as never reached.
+          const interrupted =
+            c.status === "locked" &&
+            lessons.some(
+              (l) => l.conceptId === c.id && l.messages.length > 0,
+            );
           const note = before
             ? "already yours"
             : c.skipped
@@ -212,7 +223,9 @@ export default function PathRail({
                   : "added along the way"
                 : c.status === "unlocked"
                   ? "unlocked"
-                  : "";
+                  : interrupted
+                    ? "waiting · you come back here"
+                    : "";
           return (
             <li key={c.id} className={`${cls}${fresh.has(c.id) ? " ins" : ""}`}>
               <span className="mk"></span>

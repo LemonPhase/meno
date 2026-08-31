@@ -83,6 +83,27 @@ export default function GraphView({
   const sessionOf = selected
     ? sessions.find((s) => s.id === selected.originSessionId)
     : undefined;
+  // A Session is in the middle of a Concept when it is Active there — and
+  // equally when a detour interrupted it, which leaves it Locked with its
+  // Lesson standing and the Session on its way back. Deleting either takes
+  // the transcript with it, so the server refuses both (see
+  // sessionsLearning); the panel has to know the same thing, or it offers a
+  // removal it cannot carry out.
+  const midLesson = selected
+    ? sessions.find(
+        (session) =>
+          session.phase !== "complete" &&
+          !selected.unlocked &&
+          (session.activeConceptId === selected.id ||
+            (session.path.some((e) => e.conceptId === selected.id) &&
+              lessons.some(
+                (l) =>
+                  l.sessionId === session.id &&
+                  l.conceptId === selected.id &&
+                  l.messages.length > 0,
+              ))),
+      )
+    : undefined;
 
   if (concepts.length === 0) return null;
 
@@ -258,7 +279,9 @@ export default function GraphView({
                     : `Unlocked${sessionOf ? ` in “${sessionOf.topic}”` : ""}${selected.origin === "remedial" ? ", as a detour" : ""}.`
                   : selected.status === "active"
                     ? "Being learned right now."
-                    : "Not reached yet."}
+                    : midLesson
+                      ? "Taught, and waiting — a detour is going on in front of it."
+                      : "Not reached yet."}
               </p>
               <div className="acts">
                 {lesson && lesson.messages.length > 0 && (
@@ -281,11 +304,15 @@ export default function GraphView({
                   </button>
                 )}
                 {onDelete &&
-                  (selected.status === "active" ? (
+                  (midLesson ? (
                     <button
                       className="act sc"
                       disabled
-                      title="Being learned right now — finish or skip it in its session first."
+                      title={
+                        selected.status === "active"
+                          ? `Being learned right now, in “${midLesson.topic}” — finish or skip it there first.`
+                          : `“${midLesson.topic}” is on a detour and comes back to this — finish or skip it there first.`
+                      }
                     >
                       Remove from graph
                     </button>

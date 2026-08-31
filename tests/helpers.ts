@@ -200,10 +200,16 @@ export async function startOverlappingSession(
  * Pass the Active Concept's mastery Check and then make the move a pass only
  * *offers* — two requests, because leaving is the learner's to choose. `next`
  * is what the Session generates on the way out: the following Concept's
- * exposition and its one Check, or the Recap that closes a finished Path.
+ * exposition and its one Check, the Recap that closes a finished Path, or
+ * `{ resume: true }` for a Concept this Session already taught and was
+ * pulled off by a detour — that one is returned to as it was left, so
+ * nothing is generated and nothing is scripted.
  */
 export async function passAndMoveOn(
-  next: { exposition: string; question: string } | { recap: string },
+  next:
+    | { exposition: string; question: string }
+    | { recap: string }
+    | { resume: true },
   opts: { grade?: Record<string, unknown>; sessionId?: string } = {},
 ): Promise<StateBody> {
   const { grade = {}, sessionId } = opts;
@@ -226,9 +232,11 @@ export async function passAndMoveOn(
   if (graded.status !== 200) throw new Error(`answer failed: ${graded.status}`);
 
   scriptModelResponse(
-    ...("recap" in next
-      ? [next.recap]
-      : [next.exposition, JSON.stringify({ question: next.question })]),
+    ...("resume" in next
+      ? []
+      : "recap" in next
+        ? [next.recap]
+        : [next.exposition, JSON.stringify({ question: next.question })]),
   );
   const moved = await postAdvanceRoute(scoped("/api/session/advance"));
   if (moved.status !== 200) throw new Error(`advance failed: ${moved.status}`);

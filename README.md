@@ -15,9 +15,10 @@ Running on Cloud Run in `europe-west2`. Sign in with Google; your graph is your 
 
 *A session part-way along its path. The rail on the right is this session's ordering
 of what is left to teach — and **Softmax and Scaling** is marked `skipped · you knew
-it`, because the diagnostic found it was already there. Two levers sit under the
-composer: **Test me** when a concept is too easy, **Break it down** when it is too
-hard.*
+it`, because the diagnostic found it was already there. Three levers sit under the
+composer, laid out as the moves they are: **Previous concept** to re-read something
+already passed, **Break it down** when a concept is too hard, and — rightmost, always
+the way forward — **Test me** when it is too easy.*
 
 ## How it works
 
@@ -25,7 +26,7 @@ hard.*
 2. **Investigate** — the agent researches the topic with Google Search grounding and identifies its prerequisites.
 3. **Diagnose** — it asks you questions on the prerequisites and the topic itself to find your starting point.
 4. **Preview the path** — it plans an ordered list of atomic concept nodes and shows you the whole journey upfront.
-5. **Learn, one node at a time** — each node is taught and quizzed only when you reach it (lazy generation). Two levers sit in the composer: **Test me** when it's too easy (it skips the teaching, never the verification), and **Break it down** when it's too hard (the agent finds the prerequisite you're missing and teaches that first, as a short detour). Each node has one check; pass it and **Next concept** appears and stays, so you leave when you're satisfied rather than the moment you're graded. Your answers can also trigger the agent to insert a remedial node, or — when a passing answer demonstrates the next node too — to skip that one; the graph reshapes live as this happens.
+5. **Learn, one node at a time** — each node is taught and quizzed only when you reach it (lazy generation). Three levers sit under the composer, in the order they mean — back, down, on: **Previous concept** re-reads a lesson you have already passed (nothing moves; you come straight back), **Break it down** is for when it's too hard (the agent finds the prerequisite you're missing and teaches that first, as a short detour), and **Test me** is for when it's too easy (it skips the teaching, never the verification). Each node has one check; pass it and the rightmost lever becomes **Next concept**, and stays, so you leave when you're satisfied rather than the moment you're graded. Your answers can also trigger the agent to insert a remedial node, or — when a passing answer demonstrates the next node too — to skip that one; the graph reshapes live as this happens.
 6. **Review the graph** — unlocked concepts form a node-link graph; each node links back to the session where you learned it. You can rename or delete nodes yourself; edits are recorded in an audit log that feeds back into future graph updates.
 
 You sign in with Google; everything past that point belongs to your account. Sessions behave like conversations: several can be in progress at once, each resumable where you left off, and they all feed the one graph. A topic that rests on something you've already learned *attaches* to the concept you already have rather than duplicating it — and if you've already unlocked it, it's skipped rather than taught twice.
@@ -184,6 +185,8 @@ already in the new shape is left alone.
 Tests are black-box: they call the server interface (route handlers) the way the browser would, running against the **Firestore emulator** (needs Java 21+; started automatically) with a **scripted fake model** substituted at the model-injection seam (`MENO_MODEL=scripted`), so no GCP credentials or network are needed. Identity has the matching seam (`MENO_AUTH=scripted`): a test signs in by naming a uid in the session cookie, which is how `tests/auth.test.ts` gets two users and checks that neither can see the other's Graph.
 
 ### Deploy to Cloud Run
+
+**Preview deploys:** every pull request from a branch of this repository gets its own Cloud Run service, `meno-pr-<number>`, built from that branch and deployed once the tests pass. A comment on the PR carries the URL and is edited in place on each push. A preview reads and writes the **same Firestore as production** — it is for trying the interface, not for isolated data — and it is deleted when the PR closes, along with its images (`.github/workflows/preview-cleanup.yml`). For the ones that workflow never got — previews from before it existed, a teardown that failed — `npm run previews` lists the orphans and `npm run previews -- --apply` deletes them; it only ever touches services both labelled `meno-preview` and named `meno-pr-<number>`, so production is out of its reach. Pull requests from forks are never deployed: a preview builds and runs the PR's own code with the deployer's credentials. Each preview is a new hostname, and Firebase Auth refuses sign-in popups from a domain it does not know, so the workflow adds the host to the project's authorized domains and removes it again on teardown; where it lacks the permission to do that it says so, and email-and-password sign-in works regardless.
 
 **CI/CD (how deploys actually happen):** every push to `main` runs `.github/workflows/deploy.yml` — lint + the emulator test suite, then (via Workload Identity Federation, no stored keys) builds the Docker image, pushes it to Artifact Registry, and deploys to Cloud Run as the `meno-runtime` service account. Configuration comes from GitHub repo variables: `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_WIF_PROVIDER`, `GCP_DEPLOYER_SA`, `GCP_RUNTIME_SA`, plus `NEXT_PUBLIC_FIREBASE_API_KEY` and `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` (passed as Docker **build args** — `NEXT_PUBLIC_*` is inlined into the client bundle at build time, so setting them at runtime does nothing). Left unset they do not fail the build: they inline as `""` and ship a page that cannot sign anybody in, while the deploy stays green and the smoke check passes because it asks a server route that never reads them. The Dockerfile refuses to build without them for exactly that reason.
 

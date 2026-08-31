@@ -27,6 +27,118 @@ jobs:
       - run: npm run lint
       - run: npm test
 
+  # One Cloud Run service per pull request, so a change can be tried in a
+  # browser before it is merged. Same Firestore as production — previews are
+  # for reading the interface, not for isolated data — and same runtime
+  # service account, so the model calls behave exactly as they will live.
+  preview:
+    needs: test
+    # Never for a fork: a preview builds and runs the PR's own code with the
+    # deployer's credentials, so it is only ever this repository's branches.
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write # the sticky comment carrying the URL
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push image
+        run: |
+          gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+          IMAGE="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/meno/meno:pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}"
+          # NEXT_PUBLIC_* is inlined at build time, so the preview needs its
+          # own build even though the image is otherwise identical.
+          docker build -t "$IMAGE" \
+            --build-arg NEXT_PUBLIC_FIREBASE_API_KEY="${{ vars.NEXT_PUBLIC_FIREBASE_API_KEY }}" \
+            --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="${{ vars.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}" \
+            .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy the preview service
+        run: |
+          SERVICE="meno-pr-${{ github.event.pull_request.number }}"
+          gcloud run deploy "$SERVICE" \
+            --image "$IMAGE" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --allow-unauthenticated \
+            --service-account "${{ vars.GCP_RUNTIME_SA }}" \
+            --set-env-vars "GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }},GCP_LOCATION=global" \
+            --labels "meno-preview=true,meno-pr=${{ github.event.pull_request.number }}" \
+            --max-instances 2 # a preview is one reader, not a launch
+          URL=$(gcloud run services describe "$SERVICE" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --format "value(status.url)")
+          echo "SERVICE=$SERVICE" >> "$GITHUB_ENV"
+          echo "URL=$URL" >> "$GITHUB_ENV"
+          echo "Preview URL: $URL"
+
+      - name: Let Firebase Auth sign people in on this host
+        # Sign-in popups are refused from a domain Firebase Auth does not
+        # know, and every preview is a new host. Best effort: without the
+        # permission this needs, the preview still works — email and password
+        # sign-in does not check the domain — so it says what to do rather
+        # than failing the deploy.
+        continue-on-error: true
+        run: |
+          HOST="${URL#https://}"
+          API="https://identitytoolkit.googleapis.com/admin/v2/projects/${{ vars.GCP_PROJECT_ID }}/config"
+          TOKEN=$(gcloud auth print-access-token)
+          CURRENT=$(curl -sf -H "Authorization: Bearer $TOKEN" "$API" | jq -c '.authorizedDomains // []')
+          if echo "$CURRENT" | jq -e --arg h "$HOST" 'index($h)' > /dev/null; then
+            echo "$HOST is already an authorized domain."
+            exit 0
+          fi
+          BODY=$(echo "$CURRENT" | jq -c --arg h "$HOST" '{authorizedDomains: (. + [$h])}')
+          if curl -sf -X PATCH -H "Authorization: Bearer $TOKEN" \
+              -H "Content-Type: application/json" \
+              "$API?updateMask=authorizedDomains" -d "$BODY" > /dev/null; then
+            echo "Authorized $HOST for sign-in."
+          else
+            echo "::warning::Could not authorize $HOST. Google sign-in will be"
+            echo "::warning::refused there until it is added by hand under"
+            echo "::warning::Firebase console > Authentication > Settings >"
+            echo "::warning::Authorized domains. Email and password still work."
+          fi
+
+      - name: Smoke-check the preview
+        run: |
+          # The same check the production deploy makes: the one route that
+          # answers without a session must say nobody is reading.
+          test "$(curl -sf "$URL/api/auth/session")" = '{"viewer":null}'
+
+      - name: Say where it is
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          MARKER="<!-- meno-preview -->"
+          BODY=$(printf '%s\n**Preview:** %s\n\nDeployed from `%s`. It reads and writes the **production Firestore**, so anything you unlock there is real. The service is deleted when this PR closes.\n' \
+            "$MARKER" "$URL" "${{ github.event.pull_request.head.sha }}")
+          # One comment, edited in place: a new one on every push would bury
+          # the review.
+          ID=$(gh api --paginate \
+            "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -1)
+          if [ -n "$ID" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$ID" -f body="$BODY" > /dev/null
+          else
+            gh api -X POST "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" -f body="$BODY" > /dev/null
+          fi
+
   deploy:
     needs: test
     if: github.event_name != 'pull_request'

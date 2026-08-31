@@ -128,7 +128,7 @@ npm run seed              # a Graph covering every UI state
 npm run seed -- --reset   # wipe it first
 ```
 
-That gives you two Sessions (one mid-Path, one complete), a remedial detour, both kinds of skip, Lessons with markdown and mathematics, a Check and an Edit — enough to exercise every screen without calling a model. It refuses to run unless it can reach an emulator, so it can never write to live Firestore.
+That gives you four Sessions (three in progress at different points, one complete), a remedial detour, both kinds of skip, Lessons with markdown and mathematics, a Check and an Edit — enough to exercise every screen without calling a model. It refuses to run unless it can reach an emulator, so it can never write to live Firestore.
 
 It fills the Graph called `demoUser`. To see it you can sign in as that
 reader without a Firebase Auth project at all — uncomment both `MENO_AUTH`
@@ -244,4 +244,4 @@ but restrict it to the Identity Toolkit API under Google Cloud console → APIs
 
 ## Status
 
-Early build — in progress. Current scope is Google sign-in with one graph per account, text-only topic input (file upload planned), and a bounded adaptive path (insert-remedial / skip-next). Cross-session graph merging, richer graph editing (merge nodes, manual edges), and a dedicated LLM-analysis layer over the edit audit log are explicit future work.
+Early build — in progress. Current scope is Google sign-in with one graph per account, text-only topic input (file upload planned), and a bounded adaptive path (insert-remedial / skip-next). Concepts found by different sessions are already reconciled as they are created — that is what *attaching* is — but the manual half is missing: merging two concepts you decide are the same, and drawing a prerequisite edge the agent didn't find. That, and a dedicated LLM-analysis layer over the edit audit log, are explicit future work.

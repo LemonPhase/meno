@@ -21,8 +21,9 @@ only the Admin SDK, behind the route handlers, ever touches the data.
 ## Layers
 
 **Server interface** (`src/app/api/**/route.ts`) — the whole surface the
-browser can reach. Each route resolves the uid from the session cookie before
-anything else: a signed-out request is 401 and writes nothing. Beyond that,
+browser can reach. Every one of them but `/api/auth/session`, which mints the
+cookie in the first place, resolves the uid from that cookie before anything
+else: a signed-out request is 401 and writes nothing. Beyond that,
 each route is one move in the domain: start a Session,
 answer the diagnostic, ask a question in a Lesson, request the mastery Check,
 answer it, move on, break it down, edit the Graph. Routes validate and

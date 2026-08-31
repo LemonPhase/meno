@@ -65,8 +65,8 @@
   <line x1="124" y1="460" x2="1156" y2="460" stroke="#deddd5"/>
   <text class="n"  x="124" y="486">I</text>
   <text class="h2" x="166" y="486">Server interface — the route handlers</text>
-  <text class="p"  x="166" y="508">Ten routes: the whole surface the browser can reach. Each resolves the uid from the session cookie before anything else, so a signed-out</text>
-  <text class="p"  x="166" y="526">request is 401 and a signed-in one can only ever address its own subtree. The tests call these handlers directly, the way the browser does.</text>
+  <text class="p"  x="166" y="508">Twelve routes: the whole surface the browser can reach. Eleven resolve the uid from the session cookie before anything else, so a signed-out</text>
+  <text class="p"  x="166" y="526">request is 401 and a signed-in one can only address its own subtree; the twelfth mints that cookie. Tests call them as the browser does.</text>
 
   <!-- II -->
   <line x1="124" y1="546" x2="1156" y2="546" stroke="#ebeae3"/>
@@ -118,7 +118,7 @@
   <line x1="72" y1="940" x2="1208" y2="940" stroke="#deddd5"/>
   <g>
     <text class="h2" x="72"  y="968">GitHub Actions</text>
-    <text class="q"  x="72"  y="986">lint · tsc · 81 tests</text>
+    <text class="q"  x="72"  y="986">lint · 109 tests · emulator</text>
     <line x1="238" y1="962" x2="256" y2="962" stroke="#8e8b7f"/><path d="M249 956 L257 962 L249 968" fill="none" stroke="#8e8b7f"/>
     <text class="h2" x="272" y="968">Firestore emulator</text>
     <text class="q"  x="272" y="986">with the scripted model — no GCP, no keys</text>

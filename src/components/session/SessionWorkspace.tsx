@@ -490,6 +490,38 @@ function Learning({
     ? "Next concept"
     : "Finish the path";
 
+  const lessonFor = (id: string) =>
+    state.lessons.find((l) => l.conceptId === id);
+  // What the learner can go back to: the Concepts this Session has already
+  // taught. A skipped one was never taught, so it has no Lesson to re-read
+  // and is not a place to stand.
+  const behind = path
+    .slice(0, Math.max(folio - 1, 0))
+    .filter((c) => (lessonFor(c.id)?.messages.length ?? 0) > 0);
+
+  // Going back is a move of the eye, not of the Session: an earlier Lesson
+  // is re-read exactly as it was written, and nothing re-activates, re-locks
+  // or leaves the Graph where it stands. So it is client state, and there is
+  // no request to make. It records which Concept was Active when the learner
+  // stepped back, so anything that moves the Session — the way on, or a
+  // detour splicing in — drops the review rather than leaving them reading
+  // an old page of a Session that has gone somewhere else.
+  const [review, setReview] = useState<{ from: string; at: string } | null>(
+    null,
+  );
+  const reviewIdx =
+    review?.from === active.id
+      ? behind.findIndex((c) => c.id === review.at)
+      : -1;
+  const reviewing = reviewIdx >= 0 ? behind[reviewIdx] : null;
+  const goBackTo = (conceptId: string) =>
+    setReview({ from: active.id, at: conceptId });
+
+  // Either direction arrives at the top of the concept, as arriving does.
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [reviewing?.id]);
+
   const byId = new Map(state.concepts.map((c) => [c.id, c]));
   const reqs = active.requires
     .map((r) => byId.get(r)?.label)
@@ -512,6 +544,64 @@ function Learning({
   }
 
   if (!lesson) return null;
+
+  if (reviewing) {
+    const earlier = lessonFor(reviewing.id)!;
+    const at = path.findIndex((c) => c.id === reviewing.id) + 1;
+    return (
+      <>
+        <div className="flow">
+          <div className="concept-head">
+            <span className="kicker sc">
+              Concept {roman(at)} · unlocked · re-reading
+            </span>
+            <h2 className="h-concept">{reviewing.label}</h2>
+            <p className="concept-summary">{reviewing.summary}</p>
+          </div>
+          <div className="notice fade-in">
+            <span>
+              This one is already yours; you are only re-reading it. The
+              session is still standing on {active.label}, and stays there.
+            </span>
+          </div>
+          <LessonFlow
+            messages={earlier.messages}
+            checks={state.checks}
+            /* Nothing here is new, however recently it was written. */
+            animateAfter={Number.POSITIVE_INFINITY}
+            busy={null}
+          />
+        </div>
+
+        {/* The same three slots as the lesson's, so the way forward stays
+            the rightmost button: from here, forward is back to work. */}
+        <div className="composer">
+          <div className="levers">
+            <button
+              className="lever back sc sc-11"
+              disabled={reviewIdx === 0}
+              title={
+                reviewIdx > 0
+                  ? `Re-read ${behind[reviewIdx - 1].label}.`
+                  : "This is the first concept this session taught you."
+              }
+              onClick={() => goBackTo(behind[reviewIdx - 1].id)}
+            >
+              ← Earlier concept
+            </button>
+            <span className="sp" />
+            <button
+              className="lever back strong sc sc-11"
+              title={`Back to ${active.label}, where the session left off.`}
+              onClick={() => setReview(null)}
+            >
+              Back to the lesson →
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -578,51 +668,63 @@ function Learning({
             </button>
           </div>
         </div>
-        {/* The guidance line is the control: these act on the Concept, not on
-            what you typed, so they sit outside the field. */}
+        {/* The three moves, in the order they mean: back to what is done,
+            down into what is missing, on to what comes next. They act on the
+            Concept rather than on what you typed, so they sit outside the
+            field — and they keep their slots when spent, so the way forward
+            is always the same button in the same place. */}
+        <div className="levers">
+          <button
+            className="lever back sc sc-11"
+            disabled={!!busy || behind.length === 0}
+            title={
+              behind.length > 0
+                ? `Re-read ${behind[behind.length - 1].label}. Nothing moves — you come straight back here.`
+                : "Nothing has been taught before this one yet."
+            }
+            onClick={() => goBackTo(behind[behind.length - 1].id)}
+          >
+            ← Previous concept
+          </button>
+          <span className="sp" />
+          {/* Both levers are spent once the Check is passed: there is nothing
+              left to be tested on, and a Concept the learner has just
+              demonstrated is not one to insert a prerequisite before. */}
+          <button
+            className="lever sc sc-11"
+            disabled={!!busy || !!passed || !!pendingCheck}
+            title="Too hard? The tutor finds the prerequisite you are missing and teaches that first, as a short detour before this concept. The concept itself stays as it is."
+            onClick={() => call("breakdown", "/api/session/breakdown")}
+          >
+            Break it down
+          </button>
+          {passed ? (
+            <button
+              className="lever on passed sc sc-11"
+              disabled={!!busy}
+              title="You have passed this concept's check, so it is yours whenever you leave. Stay and ask as much as you want — this stays here."
+              onClick={() => call("next", "/api/session/advance")}
+            >
+              {onward} →
+            </button>
+          ) : (
+            <button
+              className="lever on sc sc-11"
+              disabled={!!busy || !!pendingCheck}
+              title="Skip the teaching, not the verification: ask for the mastery check whenever you feel ready. Pass it and you can move on whenever you like; there is one question per concept, and you can attempt it as many times as you need."
+              onClick={() => call("check", "/api/session/check")}
+            >
+              Test me →
+            </button>
+          )}
+        </div>
         <div className="hint">
           <span>
-            {pendingCheck ? (
-              "Answer in your own words — you can attempt this as many times as you like."
-            ) : passed ? (
-              // Both levers are spent once the Check is passed: there is
-              // nothing left to be tested on, and a Concept the learner has
-              // demonstrated is not one to insert a prerequisite before.
-              // Questions still go in the composer; only the way out is
-              // offered here.
-              <>
-                Passed ·{" "}
-                <button
-                  className="hint-act onward"
-                  disabled={!!busy}
-                  title="You have passed this concept's check, so it is yours whenever you leave. Stay and ask as much as you want — this stays here."
-                  onClick={() => call("next", "/api/session/advance")}
-                >
-                  {onward} →
-                </button>
-              </>
-            ) : (
-              <>
-                Too easy?{" "}
-                <button
-                  className="hint-act"
-                  disabled={!!busy}
-                  title="Skip the teaching, not the verification: ask for the mastery check whenever you feel ready. Pass it and you can move on whenever you like; there is one question per concept, and you can attempt it as many times as you need."
-                  onClick={() => call("check", "/api/session/check")}
-                >
-                  Test me
-                </button>{" "}
-                · Too hard?{" "}
-                <button
-                  className="hint-act"
-                  disabled={!!busy}
-                  title="The tutor finds the prerequisite you are missing and teaches that first, as a short detour before this concept. The concept itself stays as it is."
-                  onClick={() => call("breakdown", "/api/session/breakdown")}
-                >
-                  Break it down
-                </button>
-              </>
-            )}
+            {pendingCheck
+              ? "Answer in your own words — you can attempt this as many times as you like."
+              : passed
+                ? "Passed · this concept is yours whenever you leave. Stay and ask as much as you want."
+                : "Too easy? Test me. Too hard? Break it down."}
           </span>
           <span>
             <kbd>↵</kbd> send · <kbd>⇧↵</kbd> new line

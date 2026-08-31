@@ -213,6 +213,41 @@ put("sessions", S2, {
   createdAt: at(60),
 });
 
+// The Concept before the Active one, taught and passed. Its Lesson is what
+// "Previous concept" goes back to — a Session mid-Path has this behind it,
+// so the seed does too.
+put("lessons", `${S2}__${S2}_dot-product`, {
+  sessionId: S2,
+  conceptId: `${S2}_dot-product`,
+  messages: [
+    {
+      kind: "exposition",
+      text: "The dot product of two vectors is\n\n$$\n\\mathbf{a}^\\top\\mathbf{b} = \\lVert\\mathbf{a}\\rVert\\,\\lVert\\mathbf{b}\\rVert\\cos\\theta\n$$\n\nHold the lengths fixed and only the angle is left: the dot product is **alignment**, read as a single number. That is the whole reason attention scores a query against a key by multiplying them.",
+      createdAt: at(),
+    },
+    { kind: "user", text: "Does it matter that longer vectors score higher?", createdAt: at(1) },
+    {
+      kind: "reply",
+      text: "It does, and that is exactly what the scaling in the next concept is for.",
+      createdAt: at(1),
+    },
+    { kind: "check-question", text: "Two unit vectors have a dot product of zero. What does that say about them?", checkId: "seed-check-4", createdAt: at(2) },
+    { kind: "check-answer", text: "They are at right angles — no alignment at all.", checkId: "seed-check-4", createdAt: at(1) },
+    { kind: "check-feedback", text: "Right. Orthogonal, and so they carry no information about each other in this measure.", checkId: "seed-check-4", createdAt: at(1) },
+  ],
+});
+
+put("checks", "seed-check-4", {
+  id: "seed-check-4",
+  sessionId: S2,
+  phase: "mastery",
+  conceptIds: [`${S2}_dot-product`],
+  question: "Two unit vectors have a dot product of zero. What does that say about them?",
+  answer: "They are at right angles — no alignment at all.",
+  verdict: "pass",
+  createdAt: at(),
+});
+
 put("lessons", `${S2}__${S2}_qkv`, {
   sessionId: S2,
   conceptId: `${S2}_qkv`,

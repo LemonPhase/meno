@@ -40,7 +40,7 @@ _Avoid_: advance (that is the request's name, not the user's action), continue.
 Unlocked is a fact of the Graph — durable, meaning learned. Locked and Active are facts of one Session's Path: Locked = not yet reached in that Session; Active = open for teaching and free-form conversation there, with exactly one Active Concept per Session. A Concept can be Locked in one Session and Active in another — but once Unlocked, it is Unlocked everywhere.
 
 **Lesson**:
-The record of everything that happens while one Concept is Active: its teaching exposition, any free-form Q&A, and every mastery Check attempt. What a Concept links back to when the user wants to review how they learned it.
+The record of everything that happens while one Concept is Active: its teaching exposition, any free-form Q&A, and every mastery Check attempt. What a Concept links back to when the user wants to review how they learned it. Going back to one during a later Lesson — stepping back through the Concepts this Session has already taught — is a move of the eye only: the earlier Lesson is re-read as it was written, and the Session's position, the Path and the Graph all stay exactly where they are.
 
 **Skipped**:
 A flag on a Concept, set when it reached Unlocked because the agent judged the user already knew it — from the diagnostic, or via a skip Adjustment — rather than because the user passed its own mastery Check.
@@ -52,7 +52,7 @@ Whether a Concept was part of the upfront Path preview (planned) or inserted mid
 The prerequisite relationship between Concepts, pointing from a Concept to the Concepts it requires (e.g. Attention requires Softmax). Produced by investigating the Topic (a small DAG), then linearized into the Path. Deleting a Concept removes it from any dependents' `requires` — no cascade, no block.
 
 **Edit**:
-A recorded, user-made change to a Concept in their Graph (rename or delete). Deleting prunes the Concept from every Session's Path — but a Concept currently Active in any in-progress Session cannot be deleted. During a Lesson the Session view offers no direct Concept editing; the user's levers there are Test me and Break it down, both offered until the Concept's mastery Check is passed and neither after it. Stored append-only and surfaced to the agent as context for future Graph updates.
+A recorded, user-made change to a Concept in their Graph (rename or delete). Deleting prunes the Concept from every Session's Path — but a Concept currently Active in any in-progress Session cannot be deleted. During a Lesson the Session view offers no direct Concept editing; the user's levers there are Test me and Break it down, both offered until the Concept's mastery Check is passed and neither after it, and going back to re-read (see Lesson), which is always offered because it changes nothing. Stored append-only and surfaced to the agent as context for future Graph updates.
 _Avoid_: audit log entry, revision.
 
 **Adjustment**:

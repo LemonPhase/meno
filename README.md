@@ -15,9 +15,10 @@ Running on Cloud Run in `europe-west2`. Sign in with Google; your graph is your 
 
 *A session part-way along its path. The rail on the right is this session's ordering
 of what is left to teach — and **Softmax and Scaling** is marked `skipped · you knew
-it`, because the diagnostic found it was already there. Two levers sit under the
-composer: **Test me** when a concept is too easy, **Break it down** when it is too
-hard.*
+it`, because the diagnostic found it was already there. Three levers sit under the
+composer, laid out as the moves they are: **Previous concept** to re-read something
+already passed, **Break it down** when a concept is too hard, and — rightmost, always
+the way forward — **Test me** when it is too easy.*
 
 ## How it works
 
@@ -25,7 +26,7 @@ hard.*
 2. **Investigate** — the agent researches the topic with Google Search grounding and identifies its prerequisites.
 3. **Diagnose** — it asks you questions on the prerequisites and the topic itself to find your starting point.
 4. **Preview the path** — it plans an ordered list of atomic concept nodes and shows you the whole journey upfront.
-5. **Learn, one node at a time** — each node is taught and quizzed only when you reach it (lazy generation). Two levers sit in the composer: **Test me** when it's too easy (it skips the teaching, never the verification), and **Break it down** when it's too hard (the agent finds the prerequisite you're missing and teaches that first, as a short detour). Each node has one check; pass it and **Next concept** appears and stays, so you leave when you're satisfied rather than the moment you're graded. Your answers can also trigger the agent to insert a remedial node, or — when a passing answer demonstrates the next node too — to skip that one; the graph reshapes live as this happens.
+5. **Learn, one node at a time** — each node is taught and quizzed only when you reach it (lazy generation). Three levers sit under the composer, in the order they mean — back, down, on: **Previous concept** re-reads a lesson you have already passed (nothing moves; you come straight back), **Break it down** is for when it's too hard (the agent finds the prerequisite you're missing and teaches that first, as a short detour), and **Test me** is for when it's too easy (it skips the teaching, never the verification). Each node has one check; pass it and the rightmost lever becomes **Next concept**, and stays, so you leave when you're satisfied rather than the moment you're graded. Your answers can also trigger the agent to insert a remedial node, or — when a passing answer demonstrates the next node too — to skip that one; the graph reshapes live as this happens.
 6. **Review the graph** — unlocked concepts form a node-link graph; each node links back to the session where you learned it. You can rename or delete nodes yourself; edits are recorded in an audit log that feeds back into future graph updates.
 
 You sign in with Google or an email and password; everything past that point belongs to your account. Sessions behave like conversations: several can be in progress at once, each resumable where you left off, and they all feed the one graph. A topic that rests on something you've already learned *attaches* to the concept you already have rather than duplicating it — and if you've already unlocked it, it's skipped rather than taught twice.

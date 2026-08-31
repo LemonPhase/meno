@@ -128,7 +128,15 @@ export default function ArchiveView({
                           ? open
                             ? "hide the lesson"
                             : "read the lesson"
-                          : "never reached"}
+                          : // No Lesson is not the same as never reached: a
+                            // skipped Concept was Unlocked without one, and
+                            // so was anything this Session finished before
+                            // Lessons were kept.
+                            c.status === "unlocked"
+                            ? c.skipped
+                              ? "skipped — no lesson"
+                              : "no transcript kept"
+                            : "never reached"}
                       </span>
                     </button>
                     {open && lesson && (

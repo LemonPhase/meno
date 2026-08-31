@@ -158,12 +158,14 @@ export default function SessionWorkspace({
     }
   }
 
+  /** Reports whether the request landed — a failed one must not be taken
+   *  for a sent message and clear what the reader typed. */
   async function call(
     label: string,
     url: string,
     body?: unknown,
     method = "POST",
-  ): Promise<void> {
+  ): Promise<boolean> {
     setBusy(label);
     setError(null);
     const payload =
@@ -178,20 +180,28 @@ export default function SessionWorkspace({
         ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
       });
       if (!res.ok) {
-        // An error body isn't always JSON (a crashed route returns HTML),
-        // so fall back to the status rather than throwing over the throw.
+        // An error body isn't always JSON (a crashed route returns HTML), and
+        // "500 Internal Server Error" tells a reader nothing about what to do
+        // — so a failure with nothing to say says the one thing that matters:
+        // their work is where they left it.
         const detail = await res.json().catch(() => null);
+        const fallback =
+          res.status >= 500
+            ? "Something went wrong at our end. Nothing was lost — try that again."
+            : `${res.status} ${res.statusText}`;
         // Every 409 here means the same thing: this client is behind. Another
         // tab moved the Session on, answered the Check, or passed the Concept
         // whose lever we just pulled. Take the correction, so the control
         // that failed goes away instead of failing again on the next press.
         if (res.status === 409) await refetch();
-        throw new Error(detail?.error ?? `${res.status} ${res.statusText}`);
+        throw new Error(detail?.error ?? fallback);
       }
       setState(await res.json());
       announceSessionsChanged();
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "something went wrong");
+      return false;
     } finally {
       setBusy(null);
     }
@@ -300,28 +310,38 @@ export default function SessionWorkspace({
 
       {withRail && !railOpen && (
         <button
-          className={`rail-fab sc${session.phase === "learning" ? " above-composer" : ""}${reviewing ? " above-reading" : ""}`}
+          className={`rail-fab sc${session.phase === "learning" ? " above-composer" : ""}`}
           onClick={() => setRailOpen(true)}
         >
           Path · {roman(Math.max(folio, 1))} of {roman(Math.max(path.length, 1))}
         </button>
       )}
 
-      <Toast error={error} onDismiss={() => setError(null)} />
+      <Toast
+        error={error}
+        aboveComposer={session.phase === "learning"}
+        onDismiss={() => setError(null)}
+      />
     </>
   );
 }
 
 function Toast({
   error,
+  aboveComposer = false,
   onDismiss,
 }: {
   error: string | null;
+  /** Sit above the composer rather than over its levers. */
+  aboveComposer?: boolean;
   onDismiss: () => void;
 }) {
   if (!error) return null;
   return (
-    <div className="toast err on" role="alert">
+    <div
+      className={`toast err on${aboveComposer ? " above-composer" : ""}`}
+      role="alert"
+    >
       <span>{error}</span>
       <button className="act sc" onClick={onDismiss}>
         Dismiss
@@ -339,7 +359,7 @@ function Diagnosing({
 }: {
   state: State;
   busy: string | null;
-  call: (label: string, url: string, body?: unknown) => Promise<void>;
+  call: (label: string, url: string, body?: unknown) => Promise<boolean>;
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const diagnostics = state.checks.filter((c) => c.phase === "diagnostic");
@@ -419,7 +439,7 @@ function Previewing({
     url: string,
     body?: unknown,
     method?: string,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
 }) {
   const [removing, setRemoving] = useState<string | null>(null);
   const known = state.concepts.filter((c) => c.status === "unlocked");
@@ -518,7 +538,7 @@ function Learning({
   /** Open an earlier Concept's Lesson, or null to come back. */
   onReview: (conceptId: string | null) => void;
   busy: string | null;
-  call: (label: string, url: string, body?: unknown) => Promise<void>;
+  call: (label: string, url: string, body?: unknown) => Promise<boolean>;
   animateAfter: number;
   resumeNote: boolean;
   onDismissResume: () => void;
@@ -574,6 +594,29 @@ function Learning({
     .map((r) => byId.get(r)?.label)
     .filter(Boolean) as string[];
 
+  // The rail's floating toggle and the error toast both have to clear the
+  // composer, and its height is not a constant: the guidance line wraps
+  // differently per state, the lever labels take two lines when narrow, and
+  // while re-reading there is no field at all. So it is measured and
+  // published, and the CSS reads it — a hand-tuned offset was wrong in
+  // exactly the states nobody had a screenshot of.
+  const measureComposer = useCallback((el: HTMLDivElement | null) => {
+    const root = document.documentElement;
+    if (!el) {
+      root.style.removeProperty("--composer-h");
+      return;
+    }
+    const publish = () =>
+      root.style.setProperty("--composer-h", `${el.offsetHeight}px`);
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--composer-h");
+    };
+  }, []);
+
   // The field auto-grows imperatively, so its height lives in the DOM and
   // not in React — and re-reading unmounts it. Sizing it on mount is what
   // brings a part-written question back the height it had.
@@ -587,13 +630,19 @@ function Learning({
   async function send() {
     const text = input.trim();
     if (!text || busy) return;
-    setInput("");
-    // The composer auto-grows imperatively; shrink it back to one line.
-    if (inputRef.current) inputRef.current.style.height = "auto";
-    if (pendingCheck) {
-      await call("answer", "/api/session/check/answer", { answer: text });
-    } else {
-      await call("chat", "/api/session/lesson", { message: text });
+    const sent = pendingCheck
+      ? await call("answer", "/api/session/check/answer", { answer: text })
+      : await call("chat", "/api/session/lesson", { message: text });
+    // Cleared only once it has actually landed. A mastery-check answer is
+    // something the reader worked at, and a request that failed — a dropped
+    // connection, a 500 — must not read as one that was sent. Anything they
+    // typed while it was in flight is theirs, and stays.
+    if (sent) {
+      setInput((current) => (current === text ? "" : current));
+      // The composer auto-grows imperatively; shrink it back to one line.
+      if (inputRef.current?.value === text) {
+        inputRef.current.style.height = "auto";
+      }
     }
     requestAnimationFrame(() =>
       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }),
@@ -635,7 +684,7 @@ function Learning({
 
         {/* The same three slots as the lesson's, so the way forward stays
             the rightmost button: from here, forward is back to work. */}
-        <div className="composer reading">
+        <div className="composer reading" ref={measureComposer}>
           <div className="levers">
             <button
               className="lever back sc sc-11"
@@ -700,7 +749,10 @@ function Learning({
         />
       </div>
 
-      <div className={`composer${pendingCheck ? " check" : ""}`}>
+      <div
+        className={`composer${pendingCheck ? " check" : ""}`}
+        ref={measureComposer}
+      >
         <div className="field">
           <textarea
             ref={sizeField}

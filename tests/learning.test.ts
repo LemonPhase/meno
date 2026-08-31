@@ -536,24 +536,12 @@ describe("POST /api/session/check/answer", () => {
     // stale Session would overwrite the winner's Path while leaving the
     // remedial Concept it created in the Graph, on no Path at all.
     const grade = JSON.stringify({
-      verdict: "fail",
-      feedback: "No.",
+      verdict: "pass",
+      feedback: "Yes, though vectors themselves are worth their own page.",
       adjustment: "insert_remedial",
       remedial: { label: "Vectors", summary: "Ordered lists of numbers." },
     });
-    // The winner's fail also takes the detour, which generates two more
-    // calls. Both are answered by shape rather than by position: the two
-    // gradings and the teaching interleave, so a fixed queue cannot say
-    // which response belongs to which.
-    const answer = (request: { messages: unknown }) => {
-      const prompt = promptText(request as never);
-      if (prompt.includes("grading a mastery check")) return grade;
-      if (prompt.includes("writing a mastery check")) {
-        return JSON.stringify({ question: "Vectors check?" });
-      }
-      return "Vectors exposition";
-    };
-    scriptModelResponse(answer, answer, answer, answer);
+    scriptModelResponse(grade, grade);
     const [a, b] = await Promise.all([
       postAnswer(jsonRequest("/api/session/check/answer", { answer: "one" })),
       postAnswer(jsonRequest("/api/session/check/answer", { answer: "two" })),

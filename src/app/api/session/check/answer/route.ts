@@ -2,7 +2,6 @@ import { gradeMasteryCheck } from "@/ai/lesson";
 import { sessionIdFrom } from "@/lib/api";
 import { graphIdFrom, unauthorized } from "@/lib/auth";
 import { revealedCheck } from "@/lib/checks";
-import { divertToRemedial } from "@/lib/progression";
 import {
   appendLessonMessages,
   formatEditContext,
@@ -16,7 +15,6 @@ import {
   spliceRemedialConcept,
   taughtHere,
 } from "@/lib/store";
-import type { Concept } from "@/lib/types";
 
 /**
  * Answer the pending mastery Check. Either verdict ends here, in feedback:
@@ -102,41 +100,39 @@ export async function POST(request: Request) {
   );
 
   // ADR-0001: the bounded Adjustment rides on the grading result, and is
-  // recorded in the Lesson so the transcript explains itself later.
-  // A detour is one level deep. Attempts are uncapped and re-ask the same
-  // question (CONTEXT.md, Check), so a learner having a hard time on a
-  // remedial could otherwise draw a fresh remedial from every attempt and be
-  // walked steadily further under the Concept they came for — which is the
-  // unbounded replanning ADR-0001 exists to prevent, arrived at one bounded
-  // step at a time. The gap under a gap is where the agent stops guessing;
-  // the learner can still ask for one themselves with Break it down.
-  const onDetour =
-    session.path.find((e) => e.conceptId === concept.id)?.origin === "remedial";
-
-  let divert: { remedial: Concept } | null = null;
-  if (grade.adjustment === "insert_remedial" && grade.remedial && !onDetour) {
-    // On a fail the learner is stuck on this Concept right now, so the gap
-    // goes in front of it and is taught at once. On a pass they are through
-    // it and stay where a pass always leaves them — the remedial follows the
-    // Concept it came out of, and is simply next when they choose to move.
-    const blocked = grade.verdict !== "pass";
+  // recorded in the Lesson so the transcript explains itself later. Both
+  // Adjustments ride a pass and only a pass.
+  //
+  // A failing answer adjusts nothing. When the gap it reveals is a missing
+  // prerequisite, grading says so in its feedback and points at Break it
+  // down — see the prompt in @/ai/lesson. Leaving a Concept is the
+  // learner's act everywhere else in Meno (CONTEXT.md, Moving on), and a
+  // detour is the one place the agent could take it from them: it would
+  // swap the page out from under an answer they had just pressed, on the
+  // strength of its own reading of one wrong answer. So it suggests, and
+  // the control it names is the one already under the composer.
+  if (
+    grade.adjustment === "insert_remedial" &&
+    grade.remedial &&
+    grade.verdict === "pass"
+  ) {
+    // Behind the Concept it came out of: the learner is through that one and
+    // stays on it, so seating the remedial in front would shuffle the Path —
+    // and their folio — backwards underneath them. It is simply next.
     const remedial = await spliceRemedialConcept(
       session,
       concept,
       grade.remedial,
-      blocked ? "before" : "after",
+      "after",
       graphId,
     );
-    if (blocked) divert = { remedial };
-    else {
-      await appendLessonMessages(
-        session.id,
-        concept.id,
-        [lessonMessage("event", `Detour queued · ${remedial.label}`)],
-        undefined,
-        graphId,
-      );
-    }
+    await appendLessonMessages(
+      session.id,
+      concept.id,
+      [lessonMessage("event", `Detour queued · ${remedial.label}`)],
+      undefined,
+      graphId,
+    );
     // The skip rides a pass only. Each Concept on the Path is a prerequisite
     // of the one after it, so an answer that fails this Concept while
     // seeming to know the next says the Path is wrong — not that the learner
@@ -166,37 +162,6 @@ export async function POST(request: Request) {
   // attempt and its feedback now standing above it in the Lesson.
   if (grade.verdict !== "pass") {
     await saveMasteryCheck(session.id, concept.id, check.question, graphId);
-  }
-
-  // Last, so the Concept being left is already complete — its answer, its
-  // feedback, and its question primed afresh for the attempt the learner
-  // will make when they come back to it. The note saying where they went is
-  // written after the move, and only says they went if they did: a divert
-  // refused because another tab moved this Session must not leave a
-  // transcript claiming otherwise.
-  if (divert) {
-    const moved = await divertToRemedial(
-      session,
-      concept,
-      divert.remedial,
-      state.concepts,
-      grade.feedback,
-      graphId,
-    );
-    await appendLessonMessages(
-      session.id,
-      concept.id,
-      [
-        lessonMessage(
-          "event",
-          moved
-            ? `Detour · ${divert.remedial.label} first`
-            : `Detour queued · ${divert.remedial.label}`,
-        ),
-      ],
-      undefined,
-      graphId,
-    );
   }
 
   return Response.json(await getSessionState(session.id, graphId));

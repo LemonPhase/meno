@@ -432,8 +432,9 @@ put("lessons", `${S4}__${S4}_derivative`, {
   ],
 });
 
-// Interrupted: taught, attempted, failed, and then left for the prerequisite
-// underneath it. Its question is primed again for the attempt still to come.
+// Interrupted: taught, attempted, failed — and the grading pointed at the
+// missing prerequisite, which the learner then asked for. Its question is
+// primed again for the attempt still to come.
 put("lessons", `${S4}__${S4}_gradient`, {
   sessionId: S4,
   conceptId: `${S4}_gradient`,
@@ -441,7 +442,8 @@ put("lessons", `${S4}__${S4}_gradient`, {
     { kind: "exposition", text: "The **gradient** collects every partial derivative of a surface into one vector:\n\n$$\n\\nabla f = \\left( \\frac{\\partial f}{\\partial x_1}, \\dots, \\frac{\\partial f}{\\partial x_n} \\right)\n$$\n\nIt points the way of steepest ascent, and its length says how steep that is.", createdAt: at() },
     { kind: "check-question", text: "Why is the gradient a vector rather than a number?", checkId: "seed-check-7", createdAt: at(2) },
     { kind: "check-answer", text: "Because the surface is curved?", checkId: "seed-check-7", createdAt: at(1) },
-    { kind: "check-feedback", text: "Not quite — curvature is a separate matter. The question is how many independent directions there are to move in.", checkId: "seed-check-7", createdAt: at(1) },
+    { kind: "check-feedback", text: "Not quite — curvature is a separate matter. What is underneath this is partial derivatives: press **Break it down** and we will do those first, then come back to this.", checkId: "seed-check-7", createdAt: at(1) },
+    { kind: "user", text: "This is too hard — break it down.", createdAt: at(1) },
     { kind: "event", text: "Detour · Slope in two directions first", createdAt: at(1) },
   ],
 });
@@ -451,7 +453,7 @@ put("lessons", `${S4}__${REM}`, {
   conceptId: REM,
   messages: [
     { kind: "event", text: "Detour from Gradient", createdAt: at() },
-    { kind: "reply", text: "Not quite — curvature is a separate matter. The question is how many independent directions there are to move in.", createdAt: at(1) },
+    { kind: "reply", text: "The gap is one step earlier: the gradient is a *collection* of slopes, so the thing to settle first is what a single one of them means.", createdAt: at(1) },
     { kind: "exposition", text: "A **partial derivative** asks the one-variable question of a many-variable function: move along $x_1$ only, hold everything else still, and measure the slope.\n\n$$\n\\frac{\\partial f}{\\partial x_1} = \\lim_{h \\to 0} \\frac{f(x_1 + h, x_2) - f(x_1, x_2)}{h}\n$$\n\nThere is one such slope per direction, which is why a surface has no single derivative to give.", createdAt: at(1) },
   ],
 });

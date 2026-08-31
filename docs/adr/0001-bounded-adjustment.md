@@ -56,22 +56,40 @@ remedial now takes the seat in front of the Concept it unblocks, and that
 Concept gains a `requires` edge on it — the Path and the graph both say what
 rests on what.
 
-Being in front is not enough on its own, so a remedial is also *taken* at
-once when the learner is blocked: always for "Break it down", and on a failed
-Check. The Concept they are pulled off is interrupted rather than left — it
-is not Unlocked, it keeps its Lesson and its unanswered Check, and it is the
-next thing on the Path when the detour is passed. Returning to it generates
-nothing: a Concept is taught once, and its one mastery question is the one it
-was written with.
+Being in front is not enough on its own, so a remedial asked for with "Break
+it down" is also *taken* at once. The Concept the learner is pulled off is
+interrupted rather than left — it is not Unlocked, it keeps its Lesson and
+its unanswered Check, and it is the next thing on the Path when the detour is
+passed. Returning to it generates nothing: a Concept is taught once, and its
+one mastery question is the one it was written with.
 
-A remedial on a *passing* answer is not blocking anything, so it does not
-divert. A pass leaves the learner exactly where a pass always leaves them,
-free to stay and ask; the remedial is simply what comes next when they choose
-to move on.
+**Grading suggests a detour; it never takes one.** A failing answer changes
+the Path in no way at all. Where the gap it reveals is a missing prerequisite
+rather than a slip, the feedback names that and points at "Break it down" —
+the control already under the composer — and stops there. Taking it is the
+learner's press.
 
-This costs two more model calls on the request that takes a detour (the
-remedial's exposition and its Check) — the same two any Concept costs when
-it is reached, moved to the moment the learner is stuck instead of later.
+That is a deliberate narrowing of this record's original "insert_remedial
+rides either verdict", and of the 2026-08-28 addendum above. Leaving a
+Concept is the learner's act everywhere else in Meno (CONTEXT.md, Moving
+on), and a detour was the one place the agent could quietly take it from
+them: it would swap the page out from under an answer they had just pressed,
+on the strength of its own reading of one wrong answer, and their feedback
+with it. A wrong answer is also thin evidence — attempts are uncapped and
+re-ask the same question, so a learner having a hard time could be walked
+steadily further under the Concept they came for, one bounded step at a time,
+which is the unbounded replanning this record exists to prevent. The learner
+pressing the lever is neither of those things, so that press stays unbounded.
+
+A remedial on a *passing* answer still rides the grade, and sits behind the
+Concept it came out of: nothing is being unblocked there, the learner stays
+where a pass always leaves them, and the remedial is simply what comes next
+when they choose to move on.
+
+This costs two more model calls on a "Break it down" that takes a detour
+(the remedial's exposition and its Check) — the same two any Concept costs
+when it is reached, moved to the moment the learner is stuck instead of
+later.
 
 Three things follow, and are part of this decision rather than incidental
 to it:
@@ -85,14 +103,6 @@ strength of an answer about something else, which is the defect the
 addendum could not have anticipated. A Concept this Session has already
 taught is never a skip target, and is not offered to the grader as what
 comes next.
-
-**A detour is one level deep.** Attempts are uncapped and re-ask the same
-question, so a learner having a hard time on a remedial could otherwise draw
-a fresh remedial from every attempt and be walked steadily further under the
-Concept they came for — unbounded replanning reached one bounded step at a
-time, which is exactly what this record exists to prevent. Grading does not
-insert a remedial while the Active Concept is itself a remedial. "Break it
-down" still does: the learner asking is not the agent guessing.
 
 **Being interrupted is a state the rest of the app has to know about.** A
 Concept can now be Locked and still hold a Lesson, which had never been

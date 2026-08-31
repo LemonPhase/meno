@@ -387,11 +387,6 @@ const message = (
 export { message as lessonMessage };
 
 /**
- * Activate a Concept: it becomes this Session's one Active Concept and its
- * Lesson opens with the exposition. (Lazy generation: the exposition is
- * produced only now, when the Concept is reached.)
- */
-/**
  * Commit a move to the next Concept: Unlock the one being left, open the
  * next one's Lesson with its exposition, and prime its one mastery Check.
  * Reports whether this call is the one that moved the Session.
@@ -406,6 +401,9 @@ export { message as lessonMessage };
  * Session that had legitimately just passed its own Check on it.
  *
  * `from` is the Concept being left — null when leaving the Path preview.
+ * It is Unlocked on the way out unless `unlockFrom` says otherwise: a
+ * diverted Concept is being *interrupted*, not finished, and must stay
+ * exactly as unlearned as it was (see divertToRemedial).
  */
 export async function activateConcept(
   session: Session,
@@ -414,27 +412,78 @@ export async function activateConcept(
   exposition: string,
   question: string,
   graphId: string,
+  { unlockFrom = true }: { unlockFrom?: boolean } = {},
 ): Promise<boolean> {
   const graph = graphRef(graphId);
   const sessionRef = graph.collection("sessions").doc(session.id);
-  const lesson: Lesson = {
-    conceptId,
-    sessionId: session.id,
-    messages: [message("exposition", exposition)],
-  };
+  const lessonRef = graph.collection("lessons").doc(
+    lessonKey(session.id, conceptId),
+  );
   const check = masteryCheck(session.id, conceptId, question);
   return db.runTransaction(async (tx) => {
-    const snap = await tx.get(sessionRef);
+    // Both reads first: a transaction may not read after it writes.
+    const [snap, lessonSnap] = await Promise.all([
+      tx.get(sessionRef),
+      tx.get(lessonRef),
+    ]);
+    const current = snap.data() as Session | undefined;
+    if (!current || (current.activeConceptId ?? null) !== from) return false;
+    if (from && unlockFrom) {
+      tx.update(graph.collection("concepts").doc(from), { unlocked: true });
+    }
+    // A Concept can now be returned to (a detour interrupts one), and its
+    // Lesson is the record of everything that happened while it was Active.
+    // So the exposition is appended to whatever is already there; it never
+    // writes over a transcript.
+    const existing = (lessonSnap.data() as Lesson | undefined)?.messages ?? [];
+    const lesson: Lesson = {
+      conceptId,
+      sessionId: session.id,
+      messages: [...existing, message("exposition", exposition)],
+    };
+    tx.set(lessonRef, lesson);
+    tx.set(graph.collection("checks").doc(check.id), check);
+    tx.update(sessionRef, { phase: "learning", activeConceptId: conceptId });
+    return true;
+  });
+}
+
+/**
+ * Return to a Concept this Session already taught — the far side of a
+ * detour. The same guarded commit as activateConcept, and Unlocking the
+ * Concept being left in the same way, but nothing is generated: the Lesson
+ * is still standing where the learner left it, and its one mastery question
+ * is still the one it was written with (CONTEXT.md, Check). A Concept is
+ * taught once; coming back is not being taught again.
+ */
+export async function resumeConcept(
+  session: Session,
+  from: string | null,
+  conceptId: string,
+  note: string,
+  graphId: string,
+): Promise<boolean> {
+  const graph = graphRef(graphId);
+  const sessionRef = graph.collection("sessions").doc(session.id);
+  const lessonRef = graph.collection("lessons").doc(
+    lessonKey(session.id, conceptId),
+  );
+  return db.runTransaction(async (tx) => {
+    const [snap, lessonSnap] = await Promise.all([
+      tx.get(sessionRef),
+      tx.get(lessonRef),
+    ]);
     const current = snap.data() as Session | undefined;
     if (!current || (current.activeConceptId ?? null) !== from) return false;
     if (from) {
       tx.update(graph.collection("concepts").doc(from), { unlocked: true });
     }
-    tx.set(
-      graph.collection("lessons").doc(lessonKey(session.id, conceptId)),
-      lesson,
-    );
-    tx.set(graph.collection("checks").doc(check.id), check);
+    const existing = (lessonSnap.data() as Lesson | undefined)?.messages ?? [];
+    tx.set(lessonRef, {
+      conceptId,
+      sessionId: session.id,
+      messages: [...existing, message("event", note)],
+    } satisfies Lesson);
     tx.update(sessionRef, { phase: "learning", activeConceptId: conceptId });
     return true;
   });
@@ -544,11 +593,6 @@ export function nextLockedConcept(
 }
 
 /**
- * Adjustment `insert_remedial` (ADR-0001): splice a remedial Concept into
- * the Path immediately after the Active one, ahead of everything that was
- * next. The previously-next Concept gains a `requires` edge on it.
- */
-/**
  * Models sometimes hand back an identifier where a name belongs; a Concept
  * label is read by a person, so `mutually_exclusive_events` becomes
  * "Mutually exclusive events".
@@ -564,10 +608,20 @@ export function humanizeLabel(label: string): string {
   return words[0].charAt(0).toUpperCase() + words[0].slice(1) + " " + words.slice(1).join(" ");
 }
 
+/**
+ * Adjustment `insert_remedial` (ADR-0001): a new Concept spliced into this
+ * Session's Path immediately *before* the Concept it unblocks, which comes
+ * to require it.
+ *
+ * Before, not after: "too hard" means a prerequisite is missing (CONTEXT.md,
+ * Break it down), and a prerequisite taught after the thing it holds up is
+ * no prerequisite at all — it is a footnote the learner reads once they no
+ * longer need it. The Path is a claim about what rests on what, so the
+ * remedial takes the seat in front.
+ */
 export async function spliceRemedialConcept(
   session: Session,
   active: Concept,
-  concepts: Concept[],
   remedial: { label: string; summary: string },
   graphId: string,
 ): Promise<Concept> {
@@ -590,20 +644,22 @@ export async function spliceRemedialConcept(
 
   const at = session.path.findIndex((e) => e.conceptId === active.id);
   const path: PathEntry[] = [...session.path];
-  path.splice(at + 1, 0, { conceptId: concept.id, origin: "remedial" });
+  path.splice(at < 0 ? path.length : at, 0, {
+    conceptId: concept.id,
+    origin: "remedial",
+  });
 
-  const wasNext = nextLockedConcept(session, concepts);
   const batch = db.batch();
   batch.set(graph.collection("concepts").doc(concept.id), concept);
   batch.update(graph.collection("sessions").doc(session.id), {
     path,
     conceptIds: [...session.conceptIds, concept.id],
   });
-  if (wasNext && wasNext.id !== active.id) {
-    batch.update(graph.collection("concepts").doc(wasNext.id), {
-      requires: [...wasNext.requires, concept.id],
-    });
-  }
+  // The gap is beneath this Concept, so the edge is this Concept's: it is
+  // what the remedial holds up, and what the graph should show resting on it.
+  batch.update(graph.collection("concepts").doc(active.id), {
+    requires: [...active.requires, concept.id],
+  });
   await batch.commit();
   return concept;
 }

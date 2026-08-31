@@ -2,6 +2,7 @@ import { gradeMasteryCheck } from "@/ai/lesson";
 import { sessionIdFrom } from "@/lib/api";
 import { graphIdFrom, unauthorized } from "@/lib/auth";
 import { revealedCheck } from "@/lib/checks";
+import { divertToRemedial } from "@/lib/progression";
 import {
   appendLessonMessages,
   formatEditContext,
@@ -14,6 +15,7 @@ import {
   skipNextConcept,
   spliceRemedialConcept,
 } from "@/lib/store";
+import type { Concept } from "@/lib/types";
 
 /**
  * Answer the pending mastery Check. Either verdict ends here, in feedback:
@@ -94,21 +96,34 @@ export async function POST(request: Request) {
 
   // ADR-0001: the bounded Adjustment rides on the grading result, and is
   // recorded in the Lesson so the transcript explains itself later.
+  let divert: { remedial: Concept } | null = null;
   if (grade.adjustment === "insert_remedial" && grade.remedial) {
     const remedial = await spliceRemedialConcept(
       session,
       concept,
-      state.concepts,
       grade.remedial,
       graphId,
     );
+    // A gap found underneath this Concept is taught before it, not after —
+    // see spliceRemedialConcept. On a fail the learner is stuck on it right
+    // now, so the detour is taken right now; on a pass they are through it
+    // and stay where they are, with the detour simply next on the Path.
+    const takeItNow = grade.verdict !== "pass";
     await appendLessonMessages(
       session.id,
       concept.id,
-      [lessonMessage("event", `Detour queued · ${remedial.label}`)],
+      [
+        lessonMessage(
+          "event",
+          takeItNow
+            ? `Detour · ${remedial.label} first`
+            : `Detour queued · ${remedial.label}`,
+        ),
+      ],
       undefined,
       graphId,
     );
+    if (takeItNow) divert = { remedial };
     // The skip rides a pass only. Each Concept on the Path is a prerequisite
     // of the one after it, so an answer that fails this Concept while
     // seeming to know the next says the Path is wrong — not that the learner
@@ -133,6 +148,19 @@ export async function POST(request: Request) {
   // attempt and its feedback now standing above it in the Lesson.
   if (grade.verdict !== "pass") {
     await saveMasteryCheck(session.id, concept.id, check.question, graphId);
+  }
+
+  // Last, so the Concept being left is already complete — feedback, the
+  // detour note, and its question primed for the attempt the learner will
+  // make when they come back to it.
+  if (divert) {
+    await divertToRemedial(
+      session,
+      concept,
+      divert.remedial,
+      state.concepts,
+      graphId,
+    );
   }
 
   return Response.json(await getSessionState(session.id, graphId));

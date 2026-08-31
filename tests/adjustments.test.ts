@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { clearScriptedResponses, scriptModelResponse } from "@/ai/scripted";
+import { POST as postAdvance } from "@/app/api/session/advance/route";
 import { POST as postCheck } from "@/app/api/session/check/route";
 import { POST as postAnswer } from "@/app/api/session/check/answer/route";
 import { db } from "@/lib/firebase-admin";
@@ -27,11 +28,13 @@ const byLabel = (s: StateBody, label: string) =>
 
 async function answerWith(
   grade: { verdict: "pass" | "fail" } & Record<string, unknown>,
+  /** What a divert generates after grading, when this answer causes one. */
+  after: string[] = [],
 ): Promise<StateBody> {
   // Whatever Check is Active already has one primed — from reachLearning()
   // or the previous turn — so revealing it costs no model call.
   await postCheck(authed("/api/session/check"));
-  scriptModelResponse(JSON.stringify(grade));
+  scriptModelResponse(JSON.stringify(grade), ...after);
   const res = await postAnswer(
     jsonRequest("/api/session/check/answer", { answer: "my attempt" }),
   );
@@ -39,43 +42,66 @@ async function answerWith(
 }
 
 describe("Adjustment: insert_remedial", () => {
-  it("splices the remedial Concept in right after the Active one on a fail", async () => {
+  it("a failed answer takes the detour at once, in front of the Concept", async () => {
     await reachLearning();
-    const state = await answerWith({
-      verdict: "fail",
-      feedback: "You're missing what a vector even is.",
-      adjustment: "insert_remedial",
-      remedial: { label: "Vectors", summary: "Ordered lists of numbers." },
-    });
+    const state = await answerWith(
+      {
+        verdict: "fail",
+        feedback: "You're missing what a vector even is.",
+        adjustment: "insert_remedial",
+        remedial: { label: "Vectors", summary: "Ordered lists of numbers." },
+      },
+      // The divert teaches the detour in the same request.
+      ["Vectors exposition", JSON.stringify({ question: "What is a vector?" })],
+    );
 
-    // Still on dot-product; the remedial lands at order 1, everything
-    // after shifts down.
+    // The learner is stuck on dot-product now, so the prerequisite is taught
+    // now — at order 0, in front of the Concept it unblocks.
     expect(state.session.phase).toBe("learning");
-    expect(byLabel(state, "Dot product").status).toBe("active");
-
     const remedial = byLabel(state, "Vectors");
     expect(remedial.origin).toBe("remedial");
-    expect(remedial.status).toBe("locked");
-    expect(remedial.order).toBe(1);
+    expect(remedial.status).toBe("active");
+    expect(remedial.order).toBe(0);
+    expect(byLabel(state, "Dot product").order).toBe(1);
     expect(byLabel(state, "Softmax").order).toBe(2);
     expect(byLabel(state, "Attention").order).toBe(3);
 
-    // The previously-next Concept now requires the remedial.
-    expect(byLabel(state, "Softmax").requires).toContain(remedial.id);
+    // Interrupted, not finished: the Concept keeps its unlearned state, and
+    // the gap is recorded as its own.
+    const left = byLabel(state, "Dot product");
+    expect(left.status).toBe("locked");
+    expect(left.unlocked).toBe(false);
+    expect(left.requires).toContain(remedial.id);
+
+    // Its feedback is still on its own page, waiting for the way back.
+    const lesson = state.lessons.find((l) => l.conceptId === left.id)!;
+    expect(lesson.messages.some((m) => m.kind === "check-feedback")).toBe(true);
   });
 
-  it("a pass with insert_remedial puts the remedial next in line", async () => {
+  it("a passing answer stays put — nothing is blocking the learner", async () => {
     await reachLearning();
-    const state = await passAndMoveOn(
-      { exposition: "Remedial exposition", question: "Vectors check?" },
-      {
-        grade: {
-          feedback: "Right, though shakily.",
-          adjustment: "insert_remedial",
-          remedial: { label: "Vectors", summary: "Ordered lists of numbers." },
-        },
-      },
+    // A gap the answer revealed, on an answer that passed: the learner is
+    // through this Concept and stays on it, as a pass always leaves them.
+    // Nothing is generated here, so nothing beyond the grade is scripted.
+    const graded = await answerWith({
+      verdict: "pass",
+      feedback: "Right, though shakily.",
+      adjustment: "insert_remedial",
+      remedial: { label: "Vectors", summary: "Ordered lists of numbers." },
+    });
+    expect(graded.session.activeConceptId).toBe(
+      byLabel(graded, "Dot product").id,
     );
+    expect(byLabel(graded, "Vectors").status).toBe("locked");
+
+    // And it is what they get when they choose to move on.
+    scriptModelResponse(
+      "Remedial exposition",
+      JSON.stringify({ question: "Vectors check?" }),
+    );
+    const state: StateBody = await (
+      await postAdvance(authed("/api/session/advance"))
+    ).json();
 
     expect(byLabel(state, "Dot product").status).toBe("unlocked");
     const remedial = byLabel(state, "Vectors");
@@ -151,19 +177,23 @@ describe("Adjustment: skip_next", () => {
 
   it("Path order stays consistent through a remedial detour to Completion", async () => {
     await reachLearning();
-    // Fail dot-product with a remedial inserted…
-    await answerWith({
-      verdict: "fail",
-      feedback: "Gap found.",
-      adjustment: "insert_remedial",
-      remedial: { label: "Vectors", summary: "Ordered lists." },
-    });
+    // Fail dot-product with a remedial inserted, which is taught at once…
+    await answerWith(
+      {
+        verdict: "fail",
+        feedback: "Gap found.",
+        adjustment: "insert_remedial",
+        remedial: { label: "Vectors", summary: "Ordered lists." },
+      },
+      ["E-vectors", JSON.stringify({ question: "Q-vectors?" })],
+    );
 
     // …then pass everything in the adjusted order:
-    // dot-product → Vectors → Softmax → Attention.
+    // Vectors → dot-product (returned to, so nothing is generated) →
+    // Softmax → Attention.
     let state: StateBody | null = null;
     for (const next of [
-      { exposition: "E-vectors", question: "Q-vectors?" },
+      { resume: true } as const,
       { exposition: "E-softmax", question: "Q-softmax?" },
       { exposition: "E-attention", question: "Q-attention?" },
     ]) {

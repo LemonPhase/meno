@@ -35,12 +35,13 @@ _Avoid_: quiz, diagnostic question — both are Checks, not separate types.
 **Moving on**:
 Leaving the Active Concept for the next one on the Path — the user's act, not the agent's. Offered only once the mastery Check is passed, and from then on always offered: the user stays as long as they want, asking whatever they still want to ask, and the Unlock happens on the way out. Grading a Check therefore ends in feedback and nothing else; a pass that is generous about a partial answer is fine, because the feedback fills the gap and the user is still standing on the Concept when they read it.
 _Avoid_: advance (that is the request's name, not the user's action), continue.
+Not Moving on: a detour, which interrupts the Active Concept rather than leaving it — nothing is Unlocked, and the user comes back (see Break it down).
 
 **Concept status** (Locked / Active / Unlocked):
 Unlocked is a fact of the Graph — durable, meaning learned. Locked and Active are facts of one Session's Path: Locked = not yet reached in that Session; Active = open for teaching and free-form conversation there, with exactly one Active Concept per Session. A Concept can be Locked in one Session and Active in another — but once Unlocked, it is Unlocked everywhere.
 
 **Lesson**:
-The record of everything that happens while one Concept is Active: its teaching exposition, any free-form Q&A, and every mastery Check attempt. What a Concept links back to when the user wants to review how they learned it. Going back to one during a later Lesson — stepping back through the Concepts this Session has already taught — is a move of the eye only: the earlier Lesson is re-read as it was written, and the Session's position, the Path and the Graph all stay exactly where they are.
+The record of everything that happens while one Concept is Active: its teaching exposition, any free-form Q&A, and every mastery Check attempt. A Concept can be Active more than once — a detour interrupts one — so a Lesson is added to and never replaced, and a Concept is taught only the first time: coming back to it re-opens the page it left, with the one question it was written with. What a Concept links back to when the user wants to review how they learned it. Going back to one during a later Lesson — stepping back through the Concepts this Session has already taught — is a move of the eye only: the earlier Lesson is re-read as it was written, and the Session's position, the Path and the Graph all stay exactly where they are.
 
 **Skipped**:
 A flag on a Concept, set when it reached Unlocked because the agent judged the user already knew it — from the diagnostic, or via a skip Adjustment — rather than because the user passed its own mastery Check.
@@ -56,11 +57,11 @@ A recorded, user-made change to a Concept in their Graph (rename or delete). Del
 _Avoid_: audit log entry, revision.
 
 **Adjustment**:
-A bounded change the agent makes to a Session's Path: inserting a remedial Concept, or marking the next Concept Unlocked via skip. Triggered by grading a mastery Check, or explicitly by the user via Break it down. Deliberately not a full replan of the remaining Path. The skip rides only a passing answer — the Path is a prerequisite claim, so knowing the next Concept while failing this one says the Path is wrong, not that the learner may move past it; inserting a remedial rides either verdict.
+A bounded change the agent makes to a Session's Path: inserting a remedial Concept in front of the one it unblocks, or marking the next Concept Unlocked via skip. Triggered by grading a mastery Check, or explicitly by the user via Break it down. Deliberately not a full replan of the remaining Path. The skip rides only a passing answer — the Path is a prerequisite claim, so knowing the next Concept while failing this one says the Path is wrong, not that the learner may move past it; inserting a remedial rides either verdict, but only a failing one takes the detour there and then: the user is stuck on the Concept now. On a pass they stay where a pass always leaves them, and the remedial is simply the next thing on the Path.
 _Avoid_: replan (implies unbounded regeneration, which this isn't).
 
 **Break it down**:
-The user's signal, during a Lesson, that the Active Concept is too hard. Always answered with an insert-remedial Adjustment — the Concept itself is never restructured, because too hard means a prerequisite is missing: every Concept should sit on the leaf of the user's current knowledge. (The too-easy counterpart is simply Test me.)
+The user's signal, during a Lesson, that the Active Concept is too hard. Always answered with an insert-remedial Adjustment — the Concept itself is never restructured, because too hard means a prerequisite is missing: every Concept should sit on the leaf of the user's current knowledge. The remedial goes in front of the Concept, which comes to require it, and is taught at once: the missing prerequisite is missing *now*, and a detour queued behind the Concept it holds up would arrive only once the user no longer needed it. The Concept they are pulled off is interrupted, not left — it stays un-Unlocked, keeps its Lesson and its unanswered Check, and is returned to when the detour is passed. (The too-easy counterpart is simply Test me.)
 
 **Session phase** (Investigating / Diagnosing / Previewing / Learning / Complete):
 Investigating: researching the Topic. Diagnosing: running diagnostic Checks. Previewing: skeleton Path shown to the user. Learning: stepping through Concepts. Complete: Path finished, closed by a Recap. During Learning, exactly one Concept is Active at any time — that Concept is the Session's current position. Any Session can be reopened at any time and resumes in the same phase, at the same position.

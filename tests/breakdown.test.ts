@@ -3,20 +3,29 @@ import { clearScriptedResponses, scriptModelResponse } from "@/ai/scripted";
 import { POST as postBreakdown } from "@/app/api/session/breakdown/route";
 import { POST as postCheck } from "@/app/api/session/check/route";
 import { POST as postAnswer } from "@/app/api/session/check/answer/route";
+import { POST as postLesson } from "@/app/api/session/lesson/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef, humanizeLabel } from "@/lib/store";
 import {
+  FIRST_CHECK_QUESTION,
   USER,
   authed,
   jsonRequest,
+  passAndMoveOn,
   reachLearning,
   type StateBody,
 } from "./helpers";
 
 // "Break it down": too hard means a prerequisite is missing, so the answer
 // is an insert_remedial Adjustment (ADR-0001) — never a restructuring of
-// the Concept itself. Path after reachLearning(): dot-product → softmax →
-// attention, with dot-product Active.
+// the Concept itself. The remedial goes in *front* of the Concept it
+// unblocks and is taught at once; the Concept the learner is pulled off
+// keeps everything and is returned to after. Path after reachLearning():
+// dot-product → softmax → attention, with dot-product Active.
+
+/** The two calls a divert makes: the remedial's exposition and its Check. */
+const teachesRemedial = (exposition: string, question: string) =>
+  scriptModelResponse(exposition, JSON.stringify({ question }));
 
 beforeEach(async () => {
   clearScriptedResponses();
@@ -45,7 +54,7 @@ describe("POST /api/session/breakdown", () => {
     expect(after.concepts).toHaveLength(state.concepts.length);
   });
 
-  it("splices a remedial in after the Active Concept and leaves it Active", async () => {
+  it("splices the remedial in front of the Concept and teaches it at once", async () => {
     const state = await reachLearning();
     const active = byLabel(state, "Dot product");
 
@@ -56,28 +65,85 @@ describe("POST /api/session/breakdown", () => {
         remedial: { label: "Vectors", summary: "Ordered lists of numbers." },
       }),
     );
+    teachesRemedial("Vectors exposition", "What is a vector?");
     const after: StateBody = await (await postBreakdown(authed("/api/session/breakdown"))).json();
 
     const remedial = byLabel(after, "Vectors");
     expect(remedial.origin).toBe("remedial");
+    // In front of the Concept it unblocks — a prerequisite taught after the
+    // thing it holds up is no prerequisite at all.
     expect(after.session.path.map((e) => e.conceptId)).toEqual([
-      active.id,
       remedial.id,
+      active.id,
       byLabel(after, "Softmax").id,
       byLabel(after, "Attention").id,
     ]);
+    expect(byLabel(after, "Dot product").requires).toContain(remedial.id);
 
-    // The Concept itself is untouched, and still being learned.
-    expect(after.session.activeConceptId).toBe(active.id);
-    expect(byLabel(after, "Dot product").status).toBe("active");
-    expect(byLabel(after, "Softmax").requires).toContain(remedial.id);
+    // And taught now: the detour is Active, with its own Lesson open.
+    expect(after.session.activeConceptId).toBe(remedial.id);
+    expect(remedial.status).toBe("active");
+    expect(
+      after.lessons.find((l) => l.conceptId === remedial.id)!.messages[0].text,
+    ).toBe("Vectors exposition");
 
-    // The transcript says what happened.
+    // The Concept left behind is interrupted, not finished: still unlearned,
+    // and its transcript ends with why the learner left it.
+    const left = byLabel(after, "Dot product");
+    expect(left.status).toBe("locked");
+    expect(left.unlocked).toBe(false);
     const lesson = after.lessons.find((l) => l.conceptId === active.id)!;
-    const kinds = lesson.messages.map((m) => m.kind);
-    expect(kinds).toContain("event");
+    expect(lesson.messages.map((m) => m.kind)).toContain("event");
     expect(lesson.messages.at(-1)!.text).toContain("Vectors");
     expect(lesson.messages.some((m) => m.kind === "reply")).toBe(true);
+  });
+
+  it("comes back to the interrupted Concept with its Lesson and question intact", async () => {
+    const state = await reachLearning();
+    const active = byLabel(state, "Dot product");
+    // Something of the learner's own on the page before the detour, so a
+    // clobbered Lesson would be unmistakable rather than merely shorter.
+    scriptModelResponse("Because it projects.");
+    await postLesson(
+      jsonRequest("/api/session/lesson", { message: "Why a dot product?" }),
+    );
+
+    scriptModelResponse(
+      JSON.stringify({
+        action: "insert_remedial",
+        message: "Vectors first.",
+        remedial: { label: "Vectors", summary: "Ordered lists of numbers." },
+      }),
+    );
+    teachesRemedial("Vectors exposition", "What is a vector?");
+    await postBreakdown(authed("/api/session/breakdown"));
+
+    // Pass the detour and leave it: the way back is the Concept it unblocked,
+    // and returning to it generates nothing at all — no exposition to script.
+    const after = await passAndMoveOn({ resume: true });
+
+    expect(after.session.activeConceptId).toBe(active.id);
+    expect(byLabel(after, "Vectors").status).toBe("unlocked");
+
+    const lesson = after.lessons.find((l) => l.conceptId === active.id)!;
+    expect(lesson.messages[0].text).toBe("Exposition 1");
+    expect(lesson.messages.some((m) => m.text === "Why a dot product?")).toBe(
+      true,
+    );
+    expect(lesson.messages.some((m) => m.text === "Because it projects.")).toBe(
+      true,
+    );
+    // One exposition, not two: a Concept is taught once.
+    expect(lesson.messages.filter((m) => m.kind === "exposition")).toHaveLength(
+      1,
+    );
+
+    // And it is still asked what it was always going to ask (CONTEXT.md,
+    // Check): the question is written with the exposition and never rewritten.
+    const questions = after.checks
+      .filter((c) => c.phase === "mastery" && c.conceptIds.includes(active.id))
+      .map((c) => c.question);
+    expect(new Set(questions)).toEqual(new Set([FIRST_CHECK_QUESTION]));
   });
 
   it("asks a question instead when the lesson gives nothing to go on", async () => {

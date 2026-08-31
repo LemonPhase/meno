@@ -528,7 +528,7 @@ describe("POST /api/session/check/answer", () => {
   });
 
   it("grades one answer per Check, whatever arrives alongside it", async () => {
-    await reachLearning();
+    const graded = active(await reachLearning())!;
     await postCheck(authed("/api/session/check"));
 
     // Two answers in flight — a double submit, or a second tab. Both grade;
@@ -541,7 +541,19 @@ describe("POST /api/session/check/answer", () => {
       adjustment: "insert_remedial",
       remedial: { label: "Vectors", summary: "Ordered lists of numbers." },
     });
-    scriptModelResponse(grade, grade);
+    // The winner's fail also takes the detour, which generates two more
+    // calls. Both are answered by shape rather than by position: the two
+    // gradings and the teaching interleave, so a fixed queue cannot say
+    // which response belongs to which.
+    const answer = (request: { messages: unknown }) => {
+      const prompt = promptText(request as never);
+      if (prompt.includes("grading a mastery check")) return grade;
+      if (prompt.includes("writing a mastery check")) {
+        return JSON.stringify({ question: "Vectors check?" });
+      }
+      return "Vectors exposition";
+    };
+    scriptModelResponse(answer, answer, answer, answer);
     const [a, b] = await Promise.all([
       postAnswer(jsonRequest("/api/session/check/answer", { answer: "one" })),
       postAnswer(jsonRequest("/api/session/check/answer", { answer: "two" })),
@@ -552,7 +564,7 @@ describe("POST /api/session/check/answer", () => {
     const inGraph = await graphRef(USER).collection("concepts").get();
     expect(inGraph.size).toBe(after.concepts.length);
     expect(after.concepts.filter((c) => c.label === "Vectors")).toHaveLength(1);
-    const messages = lessonOf(after, after.session.activeConceptId!)!.messages;
+    const messages = lessonOf(after, graded.id)!.messages;
     expect(messages.filter((m) => m.kind === "check-answer")).toHaveLength(1);
   });
 

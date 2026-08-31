@@ -2,7 +2,9 @@ import { generateMasteryCheck, teachConcept, writeRecap } from "@/ai/lesson";
 import {
   activateConcept,
   completeSession,
+  getLessons,
   nextLockedConcept,
+  resumeConcept,
 } from "./store";
 import type { Concept, Session } from "./types";
 
@@ -29,6 +31,22 @@ export async function advanceToNextConcept(
   // last thing they passed.
   const unlocked = concepts.filter((c) => c.unlocked || c.id === from);
   if (next) {
+    // A Concept this Session has already taught is one the learner was
+    // pulled off by a detour, not one waiting to be reached. It is returned
+    // to as it was left — transcript, and the one question it was written
+    // with — so nothing is generated and nothing is written over.
+    const taught = (await getLessons(session.id, graphId)).some(
+      (l) => l.conceptId === next.id && l.messages.length > 0,
+    );
+    if (taught) {
+      return resumeConcept(
+        session,
+        from,
+        next.id,
+        `Back to ${next.label} · the detour is done`,
+        graphId,
+      );
+    }
     const { exposition } = await teachConcept({
       topic: session.topic,
       concept: { label: next.label, summary: next.summary },
@@ -72,4 +90,46 @@ export async function advanceToNextConcept(
     });
     return completeSession(session, from, recap, graphId);
   }
+}
+
+/**
+ * Divert to a remedial Concept: teach it now, in front of the Concept it
+ * was spliced in to unblock (see spliceRemedialConcept), and leave that one
+ * exactly as it stood — Locked, with its Lesson and its unanswered Check
+ * waiting. "Break it down" means the prerequisite is missing *now*, so the
+ * detour is taken now; queueing it behind the Concept it holds up would
+ * teach it only once the learner no longer needed it.
+ *
+ * Reports whether this call is the one that moved the Session, on the same
+ * guard as advanceToNextConcept: it is refused if the Session has moved on
+ * underneath the caller.
+ */
+export async function divertToRemedial(
+  session: Session,
+  from: Concept,
+  remedial: Concept,
+  concepts: Concept[],
+  graphId: string,
+): Promise<boolean> {
+  const { exposition } = await teachConcept({
+    topic: session.topic,
+    concept: { label: remedial.label, summary: remedial.summary },
+    unlockedLabels: concepts.filter((c) => c.unlocked).map((c) => c.label),
+  });
+  const { question } = await generateMasteryCheck({
+    topic: session.topic,
+    concept: { label: remedial.label, summary: remedial.summary },
+    lesson: { messages: [{ kind: "exposition", text: exposition }] },
+  });
+  return activateConcept(
+    session,
+    from.id,
+    remedial.id,
+    exposition,
+    question,
+    graphId,
+    // The Concept being left is interrupted, not learned: it keeps every
+    // bit of its unlearned state, and the learner comes back to it.
+    { unlockFrom: false },
+  );
 }

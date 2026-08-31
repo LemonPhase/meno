@@ -2,6 +2,7 @@ import { breakDownConcept } from "@/ai/lesson";
 import { sessionIdFrom } from "@/lib/api";
 import { graphIdFrom, unauthorized } from "@/lib/auth";
 import { passedCheck } from "@/lib/checks";
+import { divertToRemedial } from "@/lib/progression";
 import {
   appendLessonMessages,
   formatEditContext,
@@ -16,6 +17,13 @@ import {
  * with an insert_remedial Adjustment (ADR-0001) — the Concept itself is
  * never restructured — or, when the transcript gives nothing to go on, with
  * a single question.
+ *
+ * The remedial is spliced in *before* the Concept it unblocks and taught at
+ * once. Too hard means a prerequisite is missing, and the learner is stuck
+ * on it now: a detour queued behind the Concept it holds up would arrive
+ * only once they had already got past it on their own. The Concept they are
+ * pulled off keeps everything — its Lesson, its unanswered Check, its Locked
+ * status — and is the next thing on the Path when the detour is passed.
  */
 export async function POST(request: Request) {
   const graphId = await graphIdFrom(request);
@@ -70,11 +78,27 @@ export async function POST(request: Request) {
     const remedial = await spliceRemedialConcept(
       session,
       concept,
-      state.concepts,
       outcome.remedial,
       graphId,
     );
-    messages.push(lessonMessage("event", `Detour queued · ${remedial.label}`));
+    messages.push(
+      lessonMessage("event", `Detour · ${remedial.label} first`),
+    );
+    // The record of the ask goes down before the move, so this Concept's
+    // transcript ends with why the learner left it — which is what they
+    // read when they come back to it.
+    await appendLessonMessages(
+      session.id,
+      concept.id,
+      messages,
+      undefined,
+      graphId,
+    );
+    // A refused divert means another tab moved this Session while the model
+    // was writing. Nothing is lost: the remedial is on the Path in front of
+    // the Concept it unblocks, so it is still the next thing taught.
+    await divertToRemedial(session, concept, remedial, state.concepts, graphId);
+    return Response.json(await getSessionState(session.id, graphId));
   }
 
   await appendLessonMessages(

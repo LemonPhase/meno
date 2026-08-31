@@ -39,3 +39,36 @@ the same question, so a learner failing the same Concept three times could
 draw three separate `skip_next` calls, each aimed at whatever was next by
 then — unlocking three untaught Concepts, Graph-wide and durable, for a
 learner who had demonstrated nothing.
+
+## Addendum — the remedial goes in front, and is taught first (2026-08-31)
+
+`insert_remedial` used to splice the remedial Concept in *after* the Active
+one, and leave it there to be reached in turn. Both halves of that were
+wrong, and this supersedes the wording at the top of this record ("splice one
+remedial Concept in after the current one").
+
+A remedial exists because a prerequisite is missing. A prerequisite taught
+after the thing it holds up is not a prerequisite — it is a footnote the
+learner reads once they no longer need it. Worse, reaching it meant passing
+the Concept it was inserted to unblock: the learner had to get through the
+thing they were stuck on before being taught what they were stuck on. So the
+remedial now takes the seat in front of the Concept it unblocks, and that
+Concept gains a `requires` edge on it — the Path and the graph both say what
+rests on what.
+
+Being in front is not enough on its own, so a remedial is also *taken* at
+once when the learner is blocked: always for "Break it down", and on a failed
+Check. The Concept they are pulled off is interrupted rather than left — it
+is not Unlocked, it keeps its Lesson and its unanswered Check, and it is the
+next thing on the Path when the detour is passed. Returning to it generates
+nothing: a Concept is taught once, and its one mastery question is the one it
+was written with.
+
+A remedial on a *passing* answer is not blocking anything, so it does not
+divert. A pass leaves the learner exactly where a pass always leaves them,
+free to stay and ask; the remedial is simply what comes next when they choose
+to move on.
+
+This costs two more model calls on the request that takes a detour (the
+remedial's exposition and its Check) — the same two any Concept costs when
+it is reached, moved to the moment the learner is stuck instead of later.

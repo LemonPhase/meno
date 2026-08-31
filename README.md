@@ -44,7 +44,7 @@ in **[docs/architecture.md](docs/architecture.md)**.
 ## Stack
 
 - **Next.js** (App Router, TypeScript) — UI and API routes
-- **Genkit** (`@genkit-ai/vertexai`) — agent orchestration, Gemini 3.5, Google Search grounding
+- **Genkit** (`@genkit-ai/vertexai`) — agent orchestration, Gemini 3.7, Google Search grounding
 - **Firestore** — graph nodes/edges, sessions, audit log
 - **Firebase Auth** — Google sign-in, exchanged for an httpOnly session cookie
 - **Cloud Run** — deployment target
@@ -66,7 +66,7 @@ in **[docs/architecture.md](docs/architecture.md)**.
 npm install
 cp .env.local.example .env.local
 # set GCP_PROJECT_ID to your project; keep GCP_LOCATION=global
-# (gemini-3.5 models are served from the global Vertex endpoint)
+# (gemini-3 models are served from the global Vertex endpoint)
 # fill in the two NEXT_PUBLIC_FIREBASE_* values from Firebase console > Project settings
 gcloud auth application-default login   # local Vertex AI + Firestore credentials
 gcloud services enable aiplatform.googleapis.com firestore.googleapis.com \
@@ -215,7 +215,7 @@ gcloud projects add-iam-policy-binding <your-project-id> \
 Then build, push and deploy. `gcloud run deploy --source` is no longer
 enough on its own: it gives the build no way to pass the Firebase web config,
 and `NEXT_PUBLIC_*` has to be present when `npm run build` runs, so the image
-is built explicitly instead (note `GCP_LOCATION=global` — gemini-3.5 models
+is built explicitly instead (note `GCP_LOCATION=global` — gemini-3 models
 are only served from the global Vertex endpoint; the Cloud Run region is
 independent of it):
 

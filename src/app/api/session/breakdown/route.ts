@@ -69,42 +69,51 @@ export async function POST(request: Request) {
     editContext: formatEditContext(await getRecentEdits(graphId)),
   });
 
-  const messages = [
-    lessonMessage("user", "This is too hard — break it down."),
-    lessonMessage("reply", outcome.message),
-  ];
+  const asked = lessonMessage("user", "This is too hard — break it down.");
 
   if (outcome.action === "insert_remedial" && outcome.remedial) {
     const remedial = await spliceRemedialConcept(
       session,
       concept,
       outcome.remedial,
+      // Nothing is passed here — the route refuses that above — so the
+      // prerequisite always goes in front of what it unblocks.
+      "before",
       graphId,
     );
-    messages.push(
-      lessonMessage("event", `Detour · ${remedial.label} first`),
+    // The move first, then the note that describes it: a divert refused
+    // because another tab moved this Session, or a generation that threw,
+    // must not leave a transcript claiming the learner went somewhere they
+    // did not. The remedial is on the Path in front of the Concept it
+    // unblocks either way, so it is still the next thing taught.
+    const moved = await divertToRemedial(
+      session,
+      concept,
+      remedial,
+      state.concepts,
+      outcome.message,
+      graphId,
     );
-    // The record of the ask goes down before the move, so this Concept's
-    // transcript ends with why the learner left it — which is what they
-    // read when they come back to it.
     await appendLessonMessages(
       session.id,
       concept.id,
-      messages,
+      moved
+        ? [asked, lessonMessage("event", `Detour · ${remedial.label} first`)]
+        : [
+            asked,
+            lessonMessage("reply", outcome.message),
+            lessonMessage("event", `Detour queued · ${remedial.label}`),
+          ],
       undefined,
       graphId,
     );
-    // A refused divert means another tab moved this Session while the model
-    // was writing. Nothing is lost: the remedial is on the Path in front of
-    // the Concept it unblocks, so it is still the next thing taught.
-    await divertToRemedial(session, concept, remedial, state.concepts, graphId);
     return Response.json(await getSessionState(session.id, graphId));
   }
 
   await appendLessonMessages(
     session.id,
     concept.id,
-    messages,
+    [asked, lessonMessage("reply", outcome.message)],
     undefined,
     graphId,
   );

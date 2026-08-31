@@ -4,6 +4,7 @@ import { POST as postBreakdown } from "@/app/api/session/breakdown/route";
 import { POST as postCheck } from "@/app/api/session/check/route";
 import { POST as postAnswer } from "@/app/api/session/check/answer/route";
 import { POST as postLesson } from "@/app/api/session/lesson/route";
+import { DELETE as deleteConcept } from "@/app/api/concepts/[id]/route";
 import { db } from "@/lib/firebase-admin";
 import { graphRef, humanizeLabel } from "@/lib/store";
 import {
@@ -80,12 +81,22 @@ describe("POST /api/session/breakdown", () => {
     ]);
     expect(byLabel(after, "Dot product").requires).toContain(remedial.id);
 
-    // And taught now: the detour is Active, with its own Lesson open.
+    // And taught now: the detour is Active, with its own Lesson open — and
+    // that Lesson opens by saying where the learner has been taken from and
+    // why, since they land on it without having chosen it.
     expect(after.session.activeConceptId).toBe(remedial.id);
     expect(remedial.status).toBe("active");
-    expect(
-      after.lessons.find((l) => l.conceptId === remedial.id)!.messages[0].text,
-    ).toBe("Vectors exposition");
+    const detour = after.lessons.find((l) => l.conceptId === remedial.id)!;
+    expect(detour.messages.map((m) => m.kind)).toEqual([
+      "event",
+      "reply",
+      "exposition",
+    ]);
+    expect(detour.messages[0].text).toContain("Dot product");
+    expect(detour.messages[1].text).toBe(
+      "Vectors themselves are the gap — a short detour first.",
+    );
+    expect(detour.messages[2].text).toBe("Vectors exposition");
 
     // The Concept left behind is interrupted, not finished: still unlearned,
     // and its transcript ends with why the learner left it.
@@ -93,9 +104,12 @@ describe("POST /api/session/breakdown", () => {
     expect(left.status).toBe("locked");
     expect(left.unlocked).toBe(false);
     const lesson = after.lessons.find((l) => l.conceptId === active.id)!;
-    expect(lesson.messages.map((m) => m.kind)).toContain("event");
+    expect(lesson.messages.map((m) => m.kind)).toEqual([
+      "exposition",
+      "user",
+      "event",
+    ]);
     expect(lesson.messages.at(-1)!.text).toContain("Vectors");
-    expect(lesson.messages.some((m) => m.kind === "reply")).toBe(true);
   });
 
   it("comes back to the interrupted Concept with its Lesson and question intact", async () => {
@@ -144,6 +158,84 @@ describe("POST /api/session/breakdown", () => {
       .filter((c) => c.phase === "mastery" && c.conceptIds.includes(active.id))
       .map((c) => c.question);
     expect(new Set(questions)).toEqual(new Set([FIRST_CHECK_QUESTION]));
+  });
+
+  it("stacks a second detour in front of the first, and unwinds in order", async () => {
+    const start = await reachLearning();
+    const outer = byLabel(start, "Dot product");
+
+    for (const [label, summary] of [
+      ["Vectors", "Ordered lists of numbers."],
+      ["Numbers in a row", "What a list of numbers even is."],
+    ]) {
+      scriptModelResponse(
+        JSON.stringify({
+          action: "insert_remedial",
+          message: `${label} first.`,
+          remedial: { label, summary },
+        }),
+      );
+      teachesRemedial(`${label} exposition`, `${label} check?`);
+      const res = await postBreakdown(authed("/api/session/breakdown"));
+      expect(res.status).toBe(200);
+    }
+
+    const deep: StateBody = await (await postCheck(authed("/api/session/check"))).json();
+    // Each gap seats itself in front of the thing it holds up, so the Path
+    // reads bottom-up: the deepest prerequisite first.
+    expect(
+      deep.session.path.map(
+        (e) => deep.concepts.find((c) => c.id === e.conceptId)!.label,
+      ),
+    ).toEqual([
+      "Numbers in a row",
+      "Vectors",
+      "Dot product",
+      "Softmax",
+      "Attention",
+    ]);
+    expect(deep.session.activeConceptId).toBe(byLabel(deep, "Numbers in a row").id);
+
+    // And unwinds the way it wound: the inner detour, then the outer, then
+    // the Concept they were on all along — none of them re-taught.
+    let state = await passAndMoveOn({ resume: true });
+    expect(state.session.activeConceptId).toBe(byLabel(state, "Vectors").id);
+    state = await passAndMoveOn({ resume: true });
+    expect(state.session.activeConceptId).toBe(outer.id);
+    expect(
+      state.lessons.find((l) => l.conceptId === outer.id)!.messages.filter(
+        (m) => m.kind === "exposition",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("cannot delete the Concept a detour interrupted", async () => {
+    const start = await reachLearning();
+    const stuck = byLabel(start, "Dot product");
+
+    scriptModelResponse(
+      JSON.stringify({
+        action: "insert_remedial",
+        message: "Vectors first.",
+        remedial: { label: "Vectors", summary: "Ordered lists." },
+      }),
+    );
+    teachesRemedial("Vectors exposition", "Vectors check?");
+    await postBreakdown(authed("/api/session/breakdown"));
+
+    // It is Locked and not Active, so the old "is it Active?" guard let it
+    // through — and deleting it takes the Lesson the learner is coming back
+    // to with it.
+    const res = await deleteConcept(authed(`/api/concepts/${stuck.id}`, { method: "DELETE" }), {
+      params: Promise.resolve({ id: stuck.id }),
+    });
+    expect(res.status).toBe(409);
+
+    const after: StateBody = await (await postCheck(authed("/api/session/check"))).json();
+    expect(after.concepts.some((c) => c.id === stuck.id)).toBe(true);
+    expect(
+      after.lessons.find((l) => l.conceptId === stuck.id)!.messages.length,
+    ).toBeGreaterThan(0);
   });
 
   it("asks a question instead when the lesson gives nothing to go on", async () => {

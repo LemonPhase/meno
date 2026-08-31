@@ -160,6 +160,7 @@ export default function ArchiveView({
           session={session}
           concepts={concepts}
           checks={record.checks}
+          lessons={lessons}
           mode="complete"
           open={railOpen}
           onClose={() => setRailOpen(false)}

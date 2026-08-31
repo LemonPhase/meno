@@ -72,3 +72,30 @@ to move on.
 This costs two more model calls on the request that takes a detour (the
 remedial's exposition and its Check) — the same two any Concept costs when
 it is reached, moved to the moment the learner is stuck instead of later.
+
+Three things follow, and are part of this decision rather than incidental
+to it:
+
+**`skip_next` can never take the interrupted Concept.** Mid-detour, the next
+Concept on the Path is the one the learner was pulled off — the one thing
+there they have demonstrably *not* got, often with a failed attempt on its
+own page. Skipping it would Unlock it Graph-wide and for good on the
+strength of an answer about something else, which is the defect the
+2026-08-30 addendum above was written to close, arriving through a door that
+addendum could not have anticipated. A Concept this Session has already
+taught is never a skip target, and is not offered to the grader as what
+comes next.
+
+**A detour is one level deep.** Attempts are uncapped and re-ask the same
+question, so a learner having a hard time on a remedial could otherwise draw
+a fresh remedial from every attempt and be walked steadily further under the
+Concept they came for — unbounded replanning reached one bounded step at a
+time, which is exactly what this record exists to prevent. Grading does not
+insert a remedial while the Active Concept is itself a remedial. "Break it
+down" still does: the learner asking is not the agent guessing.
+
+**Being interrupted is a state the rest of the app has to know about.** A
+Concept can now be Locked and still hold a Lesson, which had never been
+possible: it is not deletable (the guard used to ask only whether a Concept
+was Active), it is not a skip target, and the rail says the learner is
+coming back to it rather than leaving it looking unreached.

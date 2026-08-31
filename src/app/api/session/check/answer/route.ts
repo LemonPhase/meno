@@ -14,6 +14,7 @@ import {
   saveMasteryCheck,
   skipNextConcept,
   spliceRemedialConcept,
+  taughtHere,
 } from "@/lib/store";
 import type { Concept } from "@/lib/types";
 
@@ -61,12 +62,18 @@ export async function POST(request: Request) {
   }
 
   const next = nextLockedConcept(session, state.concepts);
+  // What comes next is offered to the grader so a passing answer that
+  // demonstrates it can skip it — but a Concept this Session already taught
+  // is not that. Mid-detour the next thing is the Concept the learner was
+  // pulled off, and inviting a skip of it would hand them, for good, the one
+  // thing on the Path they have just failed.
+  const onward = next && !taughtHere(state.lessons, next.id) ? next : null;
   const grade = await gradeMasteryCheck({
     topic: session.topic,
     concept: { label: concept.label, summary: concept.summary },
     nextConcept:
-      next && next.id !== concept.id
-        ? { label: next.label, summary: next.summary }
+      onward && onward.id !== concept.id
+        ? { label: onward.label, summary: onward.summary }
         : null,
     lesson: { messages: lesson.messages },
     question: check.question,
@@ -96,34 +103,40 @@ export async function POST(request: Request) {
 
   // ADR-0001: the bounded Adjustment rides on the grading result, and is
   // recorded in the Lesson so the transcript explains itself later.
+  // A detour is one level deep. Attempts are uncapped and re-ask the same
+  // question (CONTEXT.md, Check), so a learner having a hard time on a
+  // remedial could otherwise draw a fresh remedial from every attempt and be
+  // walked steadily further under the Concept they came for — which is the
+  // unbounded replanning ADR-0001 exists to prevent, arrived at one bounded
+  // step at a time. The gap under a gap is where the agent stops guessing;
+  // the learner can still ask for one themselves with Break it down.
+  const onDetour =
+    session.path.find((e) => e.conceptId === concept.id)?.origin === "remedial";
+
   let divert: { remedial: Concept } | null = null;
-  if (grade.adjustment === "insert_remedial" && grade.remedial) {
+  if (grade.adjustment === "insert_remedial" && grade.remedial && !onDetour) {
+    // On a fail the learner is stuck on this Concept right now, so the gap
+    // goes in front of it and is taught at once. On a pass they are through
+    // it and stay where a pass always leaves them — the remedial follows the
+    // Concept it came out of, and is simply next when they choose to move.
+    const blocked = grade.verdict !== "pass";
     const remedial = await spliceRemedialConcept(
       session,
       concept,
       grade.remedial,
+      blocked ? "before" : "after",
       graphId,
     );
-    // A gap found underneath this Concept is taught before it, not after —
-    // see spliceRemedialConcept. On a fail the learner is stuck on it right
-    // now, so the detour is taken right now; on a pass they are through it
-    // and stay where they are, with the detour simply next on the Path.
-    const takeItNow = grade.verdict !== "pass";
-    await appendLessonMessages(
-      session.id,
-      concept.id,
-      [
-        lessonMessage(
-          "event",
-          takeItNow
-            ? `Detour · ${remedial.label} first`
-            : `Detour queued · ${remedial.label}`,
-        ),
-      ],
-      undefined,
-      graphId,
-    );
-    if (takeItNow) divert = { remedial };
+    if (blocked) divert = { remedial };
+    else {
+      await appendLessonMessages(
+        session.id,
+        concept.id,
+        [lessonMessage("event", `Detour queued · ${remedial.label}`)],
+        undefined,
+        graphId,
+      );
+    }
     // The skip rides a pass only. Each Concept on the Path is a prerequisite
     // of the one after it, so an answer that fails this Concept while
     // seeming to know the next says the Path is wrong — not that the learner
@@ -131,7 +144,12 @@ export async function POST(request: Request) {
     // so honouring it on fails also let three failures unlock three untaught
     // Concepts, Graph-wide and for good. See ADR-0001's 2026-08-30 addendum.
   } else if (grade.adjustment === "skip_next" && grade.verdict === "pass") {
-    const skipped = await skipNextConcept(session, state.concepts, graphId);
+    const skipped = await skipNextConcept(
+      session,
+      state.concepts,
+      state.lessons,
+      graphId,
+    );
     if (skipped) {
       await appendLessonMessages(
         session.id,
@@ -150,15 +168,33 @@ export async function POST(request: Request) {
     await saveMasteryCheck(session.id, concept.id, check.question, graphId);
   }
 
-  // Last, so the Concept being left is already complete — feedback, the
-  // detour note, and its question primed for the attempt the learner will
-  // make when they come back to it.
+  // Last, so the Concept being left is already complete — its answer, its
+  // feedback, and its question primed afresh for the attempt the learner
+  // will make when they come back to it. The note saying where they went is
+  // written after the move, and only says they went if they did: a divert
+  // refused because another tab moved this Session must not leave a
+  // transcript claiming otherwise.
   if (divert) {
-    await divertToRemedial(
+    const moved = await divertToRemedial(
       session,
       concept,
       divert.remedial,
       state.concepts,
+      grade.feedback,
+      graphId,
+    );
+    await appendLessonMessages(
+      session.id,
+      concept.id,
+      [
+        lessonMessage(
+          "event",
+          moved
+            ? `Detour · ${divert.remedial.label} first`
+            : `Detour queued · ${divert.remedial.label}`,
+        ),
+      ],
+      undefined,
       graphId,
     );
   }

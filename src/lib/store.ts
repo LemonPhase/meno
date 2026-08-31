@@ -403,7 +403,15 @@ export { message as lessonMessage };
  * `from` is the Concept being left — null when leaving the Path preview.
  * It is Unlocked on the way out unless `unlockFrom` says otherwise: a
  * diverted Concept is being *interrupted*, not finished, and must stay
- * exactly as unlearned as it was (see divertToRemedial).
+ * exactly as unlearned as it was (see divertToRemedial). `lead` is anything
+ * to say before the exposition — why the learner is suddenly here, when
+ * they did not choose to be.
+ *
+ * This writes a fresh mastery Check every time, so it must never be called
+ * for a Concept this Session has already taught: that Concept keeps the one
+ * question it was written with (CONTEXT.md, Check). Coming back to one goes
+ * through resumeConcept, and advanceToNextConcept is what chooses between
+ * the two.
  */
 export async function activateConcept(
   session: Session,
@@ -412,39 +420,15 @@ export async function activateConcept(
   exposition: string,
   question: string,
   graphId: string,
-  { unlockFrom = true }: { unlockFrom?: boolean } = {},
+  {
+    unlockFrom = true,
+    lead = [],
+  }: { unlockFrom?: boolean; lead?: LessonMessage[] } = {},
 ): Promise<boolean> {
-  const graph = graphRef(graphId);
-  const sessionRef = graph.collection("sessions").doc(session.id);
-  const lessonRef = graph.collection("lessons").doc(
-    lessonKey(session.id, conceptId),
-  );
-  const check = masteryCheck(session.id, conceptId, question);
-  return db.runTransaction(async (tx) => {
-    // Both reads first: a transaction may not read after it writes.
-    const [snap, lessonSnap] = await Promise.all([
-      tx.get(sessionRef),
-      tx.get(lessonRef),
-    ]);
-    const current = snap.data() as Session | undefined;
-    if (!current || (current.activeConceptId ?? null) !== from) return false;
-    if (from && unlockFrom) {
-      tx.update(graph.collection("concepts").doc(from), { unlocked: true });
-    }
-    // A Concept can now be returned to (a detour interrupts one), and its
-    // Lesson is the record of everything that happened while it was Active.
-    // So the exposition is appended to whatever is already there; it never
-    // writes over a transcript.
-    const existing = (lessonSnap.data() as Lesson | undefined)?.messages ?? [];
-    const lesson: Lesson = {
-      conceptId,
-      sessionId: session.id,
-      messages: [...existing, message("exposition", exposition)],
-    };
-    tx.set(lessonRef, lesson);
-    tx.set(graph.collection("checks").doc(check.id), check);
-    tx.update(sessionRef, { phase: "learning", activeConceptId: conceptId });
-    return true;
+  return commitMove(session, from, conceptId, graphId, {
+    unlockFrom,
+    added: [...lead, message("exposition", exposition)],
+    check: masteryCheck(session.id, conceptId, question),
   });
 }
 
@@ -463,27 +447,56 @@ export async function resumeConcept(
   note: string,
   graphId: string,
 ): Promise<boolean> {
+  return commitMove(session, from, conceptId, graphId, {
+    unlockFrom: true,
+    added: [message("event", note)],
+  });
+}
+
+/**
+ * The one commit behind every change of position: guard on where the Session
+ * actually is, settle the Concept being left, add to the Lesson being opened
+ * — never over it — and move. One function, because the guard is the whole
+ * of the concurrency story and must not drift between two copies of itself.
+ */
+async function commitMove(
+  session: Session,
+  from: string | null,
+  conceptId: string,
+  graphId: string,
+  {
+    unlockFrom,
+    added,
+    check,
+  }: { unlockFrom: boolean; added: LessonMessage[]; check?: Check },
+): Promise<boolean> {
   const graph = graphRef(graphId);
   const sessionRef = graph.collection("sessions").doc(session.id);
-  const lessonRef = graph.collection("lessons").doc(
-    lessonKey(session.id, conceptId),
-  );
+  const lessonRef = graph
+    .collection("lessons")
+    .doc(lessonKey(session.id, conceptId));
   return db.runTransaction(async (tx) => {
+    // Both reads first: a transaction may not read after it writes.
     const [snap, lessonSnap] = await Promise.all([
       tx.get(sessionRef),
       tx.get(lessonRef),
     ]);
     const current = snap.data() as Session | undefined;
     if (!current || (current.activeConceptId ?? null) !== from) return false;
-    if (from) {
+    if (from && unlockFrom) {
       tx.update(graph.collection("concepts").doc(from), { unlocked: true });
     }
+    // A Concept can be returned to — a detour interrupts one — and its
+    // Lesson is the record of everything that happened while it was Active.
+    // So messages are appended to whatever is already there; nothing here
+    // ever writes over a transcript.
     const existing = (lessonSnap.data() as Lesson | undefined)?.messages ?? [];
     tx.set(lessonRef, {
       conceptId,
       sessionId: session.id,
-      messages: [...existing, message("event", note)],
+      messages: [...existing, ...added],
     } satisfies Lesson);
+    if (check) tx.set(graph.collection("checks").doc(check.id), check);
     tx.update(sessionRef, { phase: "learning", activeConceptId: conceptId });
     return true;
   });
@@ -610,19 +623,27 @@ export function humanizeLabel(label: string): string {
 
 /**
  * Adjustment `insert_remedial` (ADR-0001): a new Concept spliced into this
- * Session's Path immediately *before* the Concept it unblocks, which comes
- * to require it.
+ * Session's Path beside the Concept it unblocks, which comes to require it.
  *
- * Before, not after: "too hard" means a prerequisite is missing (CONTEXT.md,
- * Break it down), and a prerequisite taught after the thing it holds up is
- * no prerequisite at all — it is a footnote the learner reads once they no
- * longer need it. The Path is a claim about what rests on what, so the
- * remedial takes the seat in front.
+ * `place` is "before" whenever the learner is blocked on that Concept — the
+ * ordinary case, and the point of the whole Adjustment: "too hard" means a
+ * prerequisite is missing, and a prerequisite taught after the thing it
+ * holds up is no prerequisite at all, only a footnote read once you no
+ * longer need it. "after" is for a Concept already passed: nothing is being
+ * unblocked there, and seating the remedial in front of the Concept the
+ * learner is standing on would shuffle the Path backwards underneath them.
+ *
+ * The splice is one transaction over a re-read Session. Two Adjustments in
+ * flight — a "Break it down" in one tab, a failing answer in another — would
+ * otherwise each write a `path` computed before the other existed, and the
+ * loser's remedial would sit in the Graph on no Path at all: invisible, and
+ * never taught.
  */
 export async function spliceRemedialConcept(
   session: Session,
   active: Concept,
   remedial: { label: string; summary: string },
+  place: "before" | "after",
   graphId: string,
 ): Promise<Concept> {
   const graph = graphRef(graphId);
@@ -642,26 +663,48 @@ export async function spliceRemedialConcept(
     createdAt: Date.now(),
   };
 
-  const at = session.path.findIndex((e) => e.conceptId === active.id);
-  const path: PathEntry[] = [...session.path];
-  path.splice(at < 0 ? path.length : at, 0, {
-    conceptId: concept.id,
-    origin: "remedial",
-  });
+  const sessionRef = graph.collection("sessions").doc(session.id);
+  const activeRef = graph.collection("concepts").doc(active.id);
+  await db.runTransaction(async (tx) => {
+    const [snap, activeSnap] = await Promise.all([
+      tx.get(sessionRef),
+      tx.get(activeRef),
+    ]);
+    const current = snap.data() as Session | undefined;
+    if (!current) throw new Error("this Session is gone");
+    const path: PathEntry[] = [...(current.path ?? [])];
+    const at = path.findIndex((e) => e.conceptId === active.id);
+    // Every Concept a learner can stand on is on the Path. If this one is
+    // not, there is no seat for a prerequisite of it and any guess writes an
+    // incoherent Path — so nothing is written at all.
+    if (at < 0) {
+      throw new Error("the Concept being unblocked is not on the Path");
+    }
+    path.splice(place === "before" ? at : at + 1, 0, {
+      conceptId: concept.id,
+      origin: "remedial",
+    });
+    const requires =
+      (activeSnap.data() as Concept | undefined)?.requires ?? active.requires;
 
-  const batch = db.batch();
-  batch.set(graph.collection("concepts").doc(concept.id), concept);
-  batch.update(graph.collection("sessions").doc(session.id), {
-    path,
-    conceptIds: [...session.conceptIds, concept.id],
+    tx.set(graph.collection("concepts").doc(concept.id), concept);
+    tx.update(sessionRef, {
+      path,
+      conceptIds: [...(current.conceptIds ?? []), concept.id],
+    });
+    // The gap is beneath this Concept, so the edge is this Concept's: it is
+    // what the remedial holds up, and what the graph should draw resting on
+    // it.
+    tx.update(activeRef, { requires: [...requires, concept.id] });
   });
-  // The gap is beneath this Concept, so the edge is this Concept's: it is
-  // what the remedial holds up, and what the graph should show resting on it.
-  batch.update(graph.collection("concepts").doc(active.id), {
-    requires: [...active.requires, concept.id],
-  });
-  await batch.commit();
   return concept;
+}
+
+/** Has this Session already taught this Concept — is there a page of it? */
+export function taughtHere(lessons: Lesson[], conceptId: string): boolean {
+  return lessons.some(
+    (l) => l.conceptId === conceptId && l.messages.length > 0,
+  );
 }
 
 /**
@@ -672,10 +715,17 @@ export async function spliceRemedialConcept(
 export async function skipNextConcept(
   session: Session,
   concepts: Concept[],
+  lessons: Lesson[],
   graphId: string,
 ): Promise<Concept | null> {
   const next = nextLockedConcept(session, concepts);
   if (!next) return null;
+  // A Concept this Session has already taught is never a skip target. Mid
+  // detour the Concept the learner was pulled off is what comes next, and it
+  // is the one thing on the Path they have demonstrably not got: skipping it
+  // would Unlock it Graph-wide and for good, on the strength of an answer
+  // about something else, over a recorded failure of its own Check.
+  if (taughtHere(lessons, next.id)) return null;
   await graphRef(graphId)
     .collection("concepts")
     .doc(next.id)
@@ -753,16 +803,46 @@ export async function renameConcept(
  * (the one bound on ADR-0003's "never blocks").
  */
 export async function sessionsLearning(
-  conceptId: string,
+  concept: Concept,
   graphId: string,
 ): Promise<Session[]> {
-  const snap = await graphRef(graphId)
-    .collection("sessions")
-    .where("activeConceptId", "==", conceptId)
-    .get();
-  return snap.docs
-    .map((d) => asSession(d.data()))
-    .filter((s) => s.phase !== "complete");
+  // Unlocked is settled: a Concept the learner has finished is theirs to
+  // curate, Lesson and all (ADR-0003). Only one still to be learned can be
+  // in the middle of being learned.
+  if (concept.unlocked) return [];
+  const conceptId = concept.id;
+  const graph = graphRef(graphId);
+  const [activeSnap, lessonSnap] = await Promise.all([
+    graph.collection("sessions").where("activeConceptId", "==", conceptId).get(),
+    // Being Active is no longer the whole of being learned: a detour
+    // interrupts a Concept and leaves it Locked, its Lesson standing and the
+    // learner on their way back to it. Deleting that would take the
+    // transcript with it — which is the loss this guard exists to prevent.
+    graph.collection("lessons").where("conceptId", "==", conceptId).get(),
+  ]);
+
+  const found = new Map<string, Session>();
+  for (const doc of activeSnap.docs) {
+    const session = asSession(doc.data());
+    found.set(session.id, session);
+  }
+  const interrupted = lessonSnap.docs
+    .map((d) => d.data() as Lesson)
+    .filter((l) => l.messages.length > 0 && !found.has(l.sessionId));
+  for (const lesson of interrupted) {
+    const doc = await graph.collection("sessions").doc(lesson.sessionId).get();
+    if (doc.exists) found.set(lesson.sessionId, asSession(doc.data()!));
+  }
+
+  return [...found.values()].filter(
+    (s) =>
+      s.phase !== "complete" &&
+      // A Lesson from a Session that has since moved past this Concept is a
+      // record, not a claim on it: what cannot be deleted is a Concept the
+      // Session is still going to come back to.
+      (s.activeConceptId === conceptId ||
+        s.path.some((e) => e.conceptId === conceptId)),
+  );
 }
 
 /**

@@ -3,8 +3,10 @@ import {
   activateConcept,
   completeSession,
   getLessons,
+  lessonMessage,
   nextLockedConcept,
   resumeConcept,
+  taughtHere,
 } from "./store";
 import type { Concept, Session } from "./types";
 
@@ -35,10 +37,9 @@ export async function advanceToNextConcept(
     // pulled off by a detour, not one waiting to be reached. It is returned
     // to as it was left — transcript, and the one question it was written
     // with — so nothing is generated and nothing is written over.
-    const taught = (await getLessons(session.id, graphId)).some(
-      (l) => l.conceptId === next.id && l.messages.length > 0,
-    );
-    if (taught) {
+    // Read fresh rather than taking the caller's snapshot: a detour may have
+    // written this very Lesson during the request that led here.
+    if (taughtHere(await getLessons(session.id, graphId), next.id)) {
       return resumeConcept(
         session,
         from,
@@ -109,6 +110,10 @@ export async function divertToRemedial(
   from: Concept,
   remedial: Concept,
   concepts: Concept[],
+  /** Why they are here: the tutor's reading of the gap, or the Check's
+   *  feedback. It opens the detour's page, because the page they were on
+   *  when it was written is the one they are being taken off. */
+  because: string,
   graphId: string,
 ): Promise<boolean> {
   const { exposition } = await teachConcept({
@@ -128,8 +133,17 @@ export async function divertToRemedial(
     exposition,
     question,
     graphId,
-    // The Concept being left is interrupted, not learned: it keeps every
-    // bit of its unlearned state, and the learner comes back to it.
-    { unlockFrom: false },
+    {
+      // The Concept being left is interrupted, not learned: it keeps every
+      // bit of its unlearned state, and the learner comes back to it.
+      unlockFrom: false,
+      // Landing on an unfamiliar exposition with no idea why is the one way
+      // this could read as the tutor losing the thread, so the reason comes
+      // with them.
+      lead: [
+        lessonMessage("event", `Detour from ${from.label}`),
+        lessonMessage("reply", because),
+      ],
+    },
   );
 }

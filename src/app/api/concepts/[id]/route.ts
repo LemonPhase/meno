@@ -41,7 +41,9 @@ export async function PATCH(request: Request, { params }: Context) {
 /**
  * Delete a Concept (ADR-0003: never cascades). Refused while it is being
  * learned: a Session mid-Lesson on a Concept that vanished has no honest
- * state to be in — finish or skip it there first.
+ * state to be in — finish or skip it there first. Being learned covers a
+ * Concept a detour has interrupted, too, which is Locked but has a Lesson
+ * standing and a Session on its way back to it.
  */
 export async function DELETE(request: Request, { params }: Context) {
   const graphId = await graphIdFrom(request);
@@ -53,7 +55,7 @@ export async function DELETE(request: Request, { params }: Context) {
     return Response.json({ error: "no such Concept" }, { status: 404 });
   }
 
-  const learning = await sessionsLearning(id, graphId);
+  const learning = await sessionsLearning(concept, graphId);
   if (learning.length > 0) {
     return Response.json(
       {

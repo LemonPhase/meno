@@ -289,6 +289,7 @@ export default function SessionWorkspace({
             session={session}
             concepts={state.concepts}
             checks={state.checks}
+            lessons={state.lessons}
             mode={session.phase === "complete" ? "complete" : "learning"}
             open={railOpen}
             onClose={() => setRailOpen(false)}

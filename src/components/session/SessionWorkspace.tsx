@@ -11,7 +11,13 @@ import Markdown from "@/components/session/Markdown";
 import PathRail from "@/components/session/PathRail";
 import TopicEntry from "@/components/session/TopicEntry";
 import { passedCheck, revealedCheck } from "@/lib/checks";
-import type { Check, Lesson, Session, SessionConcept } from "@/lib/types";
+import type {
+  Check,
+  Lesson,
+  LessonMessage,
+  Session,
+  SessionConcept,
+} from "@/lib/types";
 import { announceSessionsChanged, roman } from "@/lib/ui";
 
 type State = {
@@ -207,6 +213,27 @@ export default function SessionWorkspace({
     }
   }
 
+  /**
+   * Show a message the moment it is sent, before the server has seen it.
+   * The response replaces the whole state a beat later and this one gives
+   * way to the stored article of the same text; until then the reader is
+   * looking at what they wrote, which is the only honest thing to show
+   * them. Returns the undo for a request that never lands.
+   */
+  function echo(conceptId: string, message: LessonMessage): () => void {
+    const put = (messages: (m: LessonMessage[]) => LessonMessage[]) =>
+      setState((s) => ({
+        ...s,
+        lessons: s.lessons.map((l) =>
+          l.conceptId === conceptId ? { ...l, messages: messages(l.messages) } : l,
+        ),
+      }));
+    put((messages) => [...messages, message]);
+    // By identity, not by text: an earlier attempt at the same Check could
+    // have said exactly the same thing.
+    return () => put((messages) => messages.filter((m) => m !== message));
+  }
+
   const { session } = state;
 
   if (!ready) return <div className="work" />;
@@ -281,6 +308,7 @@ export default function SessionWorkspace({
               folio={folio}
               behind={behind}
               reviewing={reviewing}
+              echo={echo}
               onReview={(conceptId) =>
                 setReview(conceptId ? { from: active.id, conceptId } : null)
               }
@@ -521,6 +549,7 @@ function Learning({
   behind,
   reviewing,
   onReview,
+  echo,
   busy,
   call,
   animateAfter,
@@ -537,6 +566,8 @@ function Learning({
   reviewing: SessionConcept | null;
   /** Open an earlier Concept's Lesson, or null to come back. */
   onReview: (conceptId: string | null) => void;
+  /** Show a sent message at once; returns the undo if it never lands. */
+  echo: (conceptId: string, message: LessonMessage) => () => void;
   busy: string | null;
   call: (label: string, url: string, body?: unknown) => Promise<boolean>;
   animateAfter: number;
@@ -627,26 +658,54 @@ function Learning({
     el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
   }, []);
 
-  async function send() {
-    const text = input.trim();
-    if (!text || busy) return;
-    const sent = pendingCheck
-      ? await call("answer", "/api/session/check/answer", { answer: text })
-      : await call("chat", "/api/session/lesson", { message: text });
-    // Cleared only once it has actually landed. A mastery-check answer is
-    // something the reader worked at, and a request that failed — a dropped
-    // connection, a 500 — must not read as one that was sent. Anything they
-    // typed while it was in flight is theirs, and stays.
-    if (sent) {
-      setInput((current) => (current === text ? "" : current));
-      // The composer auto-grows imperatively; shrink it back to one line.
-      if (inputRef.current?.value === text) {
-        inputRef.current.style.height = "auto";
-      }
-    }
+  function toBottom() {
     requestAnimationFrame(() =>
       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }),
     );
+  }
+
+  async function send() {
+    const text = input.trim();
+    if (!text || busy) return;
+    const answering = pendingCheck;
+
+    // The message goes up and the field empties at once — the reader has
+    // sent it, and a page that still shows it sitting in the composer for
+    // however long the model takes reads as one that has not noticed.
+    setInput("");
+    // The composer auto-grows imperatively; shrink it back to one line.
+    if (inputRef.current) inputRef.current.style.height = "auto";
+    const undo = echo(active.id, {
+      kind: answering ? "check-answer" : "user",
+      text,
+      ...(answering ? { checkId: answering.id } : {}),
+      createdAt: Date.now(),
+    });
+    toBottom();
+
+    const sent = answering
+      ? await call("answer", "/api/session/check/answer", { answer: text })
+      : await call("chat", "/api/session/lesson", { message: text });
+
+    // It was never sent, so it must not stand as though it were: the
+    // message comes back off the page and the text back into the field —
+    // an answer to a Check is something the reader worked at. Unless they
+    // have started writing something else in the meantime, which is theirs.
+    if (!sent) {
+      undo();
+      setInput((current) => {
+        if (current !== "") return current;
+        requestAnimationFrame(() => {
+          const field = inputRef.current;
+          if (!field) return;
+          field.style.height = "auto";
+          field.style.height = `${Math.min(field.scrollHeight, 180)}px`;
+        });
+        return text;
+      });
+      return;
+    }
+    toBottom();
   }
 
   if (!lesson) return null;

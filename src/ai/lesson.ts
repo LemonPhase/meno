@@ -43,7 +43,44 @@ Use only commands KaTeX supports (\\frac, \\sum, \\sqrt, \\cdot, \\text{},
 \\mathbb{}, aligned) — no packages, no \\newcommand, and end every row of
 an aligned block with \\\\. Write a literal dollar amount as \\$ so it is
 not read as maths. Reserve fenced code blocks for actual code. Use
-Markdown (bold, lists, tables) where it genuinely helps.`;
+Markdown (bold, lists, tables) where it genuinely helps.
+
+When a small diagram would carry the explanation better than prose — a
+sequence of steps, a pipeline, a branch, a comparison, a feedback loop —
+draw one with a fenced \`\`\`viz block. Inside, write small HTML from
+this kit and nothing else:
+
+\`\`\`viz
+<figure class="viz">
+  <figcaption class="sc viz-cap">The Bayesian update</figcaption>
+  <ol class="viz-flow">
+    <li class="viz-step"><span class="viz-tag sc">Prior</span> what you believed, <em>P(H)</em></li>
+    <li class="viz-step viz-now"><span class="viz-tag sc">Posterior</span> what you now hold, <em>P(H|D)</em></li>
+  </ol>
+</figure>
+\`\`\`
+
+- One figure per fence, wrapped in <figure class="viz"> with an optional
+  <figcaption class="sc viz-cap">. Never more than one figure per fence.
+- A horizontal flow is <ol class="viz-flow"> whose <li class="viz-step">
+  become boxes joined by arrows; a timeline is <ol class="viz-axis">;
+  a branch inside a step is <ul class="viz-branch"> of steps.
+- <span class="viz-tag"> names the step; mark the step the learner should
+  attend to with viz-now; mark one already attained with viz-done. Use
+  viz-now and viz-done sparingly — usually neither.
+- Text inside steps is plain prose with <em> for symbols; write maths as
+  unicode (P(H|D)), NOT as $...$ or TeX — it is not KaTeX-rendered there.
+- Keep figures small: 2-6 steps. Use them sparingly — one where it
+  genuinely helps, not in every reply.
+- When the figure needs real geometry (curved arrows, a loop that returns
+  on itself, a 2-D layout), use inline <svg viewBox="..."> instead of the
+  flow kit. Draw only with <g>, <defs>, <marker>, <path>, <rect>,
+  <circle>, <ellipse>, <line>, <polyline>, <polygon>, <text>, <tspan>.
+  Give every stroked element data-ink="lapis" (or ink, ink2, ink3, rule,
+  laurel, rubric, sheet) and every filled element data-fill="..." — never
+  a raw color, never a style attribute; text is styled for you. Compute
+  coordinates generously: wide boxes, labels centred with
+  text-anchor="middle".`;
 
 export const teachConcept = ai.defineFlow(
   {
